@@ -1,12 +1,12 @@
 # VectorGraphingToolkit
 
-*Current Version: 1.0.0*
+*Current Version: 0.0.1-beta*
 
 A simplistic vector/vector field visualization tool built on top of `matplotlib`.
 
 I made this purely for fun. Can it be used for anything practical? I have no idea - I'm an amateur programmer, not a physicist. If it does prove useful to anyone, I would love to hear about your use-case and your take on some improvements that could be made. I am extremely open to collaboration as well, if you want to contribute to the project, please get in contact. 
 
-Feel free to submit bugs, feature requests, etc. to the issues page. Changelog can be found [here](CHANGELOG.md). The current version of this module, 1.0.0, is what I'm deeming the first "official" version -- I don't doubt the possibility of numerous bugs and oversights.
+Feel free to submit bugs, feature requests, etc. to the issues page.
 
 <p align="center"> 
   <img src=examples/ex_intro.gif>
