@@ -8,7 +8,7 @@ Recommended import:
 
   from vgtk import Vector, VectorField
 
-Version: 1.0.0
+Version: 0.0.1
 
 GitHub/Docs: https://github.com/braedynl/VectorGraphingToolkit/
 
