@@ -848,7 +848,9 @@ Author: Braedyn Lettinga
 
 Contributors: Ashu Acharya
 
-Special Thanks: Heiko Hergert Ph.D., Tony S. Yu Ph.D.
+Credits: Heiko Hergert, Ph.D., Tony S. Yu, Ph.D.
+
+Contribution resources are being worked on at the moment.  
 
 ## License
 
