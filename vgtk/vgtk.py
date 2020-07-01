@@ -164,8 +164,8 @@ class Vector(object):
         return not self.__eq__(other)
 
     def __hash__(self) -> int:
-        '''Returns hash of self.'''
-        return hash(self)
+        '''Returns id of self.'''
+        return id(self)  # cannot be hash(self) -- will break
 
     def __getitem__(self, index:int) -> float:
         '''Obtains the u or v scalar from the array of scalars.'''
