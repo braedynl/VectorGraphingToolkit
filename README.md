@@ -4,7 +4,7 @@
 
 A simplistic vector/vector field visualization tool built on top of `matplotlib`.
 
-I made this purely for fun. Can it be used for anything practical? I have no idea - I'm an amateur programmer, not a physicist. If it does prove useful to anyone, I would love to hear about your use-case and your take on some improvements that could be made. I am extremely open to collaboration as well, if you want to contribute to the project, please get in contact. 
+I made this purely for fun. Can it be used for anything practical? I have no idea -- I'm an amateur programmer, not a physicist. If it does prove useful to anyone, I would love to hear about your use-case and your take on some improvements that could be made. I am extremely open to collaboration as well, if you want to contribute to the project, please get in contact. 
 
 Feel free to submit bugs, feature requests, etc. to the issues page.
 
@@ -805,7 +805,7 @@ Out:
 
 Notes:
 
-The velocities of the particles are relative. If the `plot()` method is active, its `scale` parameter *will* affect the speed of the particles. Additionally, if `interactive=True`, particle velocities will reflect the value set by the scale slider. The particle simulation will slow down significantly -- unfortunately because `matplotlib` isn't the greatest at handling animations. When `interactive=False`, however, the animation will be [blitted](https://en.wikipedia.org/wiki/Bit_blit), and perform considerably faster and smoother.
+The velocities of the particles are relative. If the `plot()` method is active, its `scale` parameter *will* affect the speed of the particles. Additionally, if `interactive=True`, particle velocities will reflect the value set by the scale slider. The particle simulation will slow down significantly -- this is because `matplotlib` isn't the greatest at handling animations. When `interactive=False`, however, the animation will be [blitted](https://en.wikipedia.org/wiki/Bit_blit), and will perform considerably faster and smoother.
 
 ### `get_latex_str`
 Returns a `str` of the `VectorField` instance in LaTeX formatting.
