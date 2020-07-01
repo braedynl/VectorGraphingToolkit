@@ -368,7 +368,7 @@ v = Vector(1, 2)
 
 v.plot(fig, ax, color='k', trace_scalars=True)
 
-ax.set_title(v.get_latex_str(True))
+ax.set_title(v.get_latex_str('unit'))
 plt.show()
 ```
 Out:
@@ -674,7 +674,7 @@ F = VectorField('x', 'y')
 
 F.plot(fig, ax)
 
-ax.set_title(F.get_latex_str(True))
+ax.set_title(F.get_latex_str('unit'))
 plt.show()
 ```
 Out:
@@ -755,7 +755,7 @@ fig, ax = settings(lim=2)
 F = VectorField.from_grad('10*x*exp(-(x**2 + y**2))')
 
 F.plot(fig, ax, scale=0.1, density=25, cmap='viridis')
-ax.set_title(F.get_latex_str(True))
+ax.set_title(F.get_latex_str('unit'))
 
 ani = F.particles(fig, ax)
 
@@ -790,7 +790,7 @@ fig, ax = settings(lim=10)
 F = VectorField('-y', 'x')
 
 F.plot(fig, ax, density=15, cmap='plasma')
-ax.set_title(F.get_latex_str(True))
+ax.set_title(F.get_latex_str('unit'))
 
 ani = F.particles(fig, ax)
 
