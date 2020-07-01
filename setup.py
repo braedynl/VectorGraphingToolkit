@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='VectorGraphingToolkit',
-    version='0.0.1-beta',
+    version='0.0.1',
     license='MIT',
     author='Braedyn Lettinga',
     author_email='braedynlettinga@gmail.com',
