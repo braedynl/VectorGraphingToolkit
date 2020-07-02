@@ -40,6 +40,10 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from scipy.integrate import odeint
 from sympy.utilities.lambdify import lambdastr, lambdify
 
+
+from vgtk.events import VectorEventHandler, VectorFieldEventHandler
+
+
 np.warnings.filterwarnings('ignore')
 
 
@@ -73,29 +77,7 @@ class Vector(object):
         self.__scalars = np.array((u, v), dtype=np.dtype(float))
         self.name = str(name)
 
-        # plot method "globals"
-        self.__fig = None
-        self.__ax = None
-
-        self.__color = 'skyblue'
-        self.__x0 = 0  # starting x-coordinate
-        self.__y0 = 0  # starting y-coordinate
-        self.__u = u  # u scalar
-        self.__v = v  # v scalar
-        self.__x1 = self.__x0 + self.__u  # ending x-coordinate
-        self.__y1 = self.__y0 + self.__v  # ending y-coordinate
-        self.__q = None  # Quiver instance for plot()
-        self.__q_kwargs = None
-        self.__xtrace = None  # xtrace Line2D instance
-        self.__ytrace = None  # ytrace Line2D instance
-        self.__annotation = '$\\angle x = {:.2f}^c, \\angle y = {:.2f}^c$\n$x_0 = {:.2f}, y_0 = {:.2f}$\n$x_1 = {:.2f}, y_1 = {:.2f}$\n$u = {:.2f}, v = {:.2f}$\n$mag(\\vec{{{name}}}) = {:.2f}$'
-        self.__annot = None  # annotation
-        self.__drag_pt = None  # Line2D drag point instance
-
-        # state trackers
-        self.__trace_state = False
-        self.__dragging_pt = False
-        self.__dragging_vec = False
+        self.__handler = None
     
     def __add__(self, other:Vector) -> Vector:
         '''Adds two vectors.''' 
@@ -297,49 +279,13 @@ class Vector(object):
 
             seaborn can be used, and makes the plots look a lot prettier. Can make interactability slow, however.
         '''
-        self.__fig = fig 
-        self.__ax = ax 
-        self.__ax.set_aspect('equal')
+        kwargs['color'] = color
+        kwargs['scale_units'] = 'xy'
+        kwargs['angles'] = 'xy'
+        kwargs['scale'] = 1
 
-        self.__x0 = x
-        self.__y0 = y
-        self.__x1 = self.__x0 + self.__u
-        self.__y1 = self.__y0 + self.__v
-
-        self.__color = color
-        self.__q_kwargs = kwargs
-
-        self.__trace_state = trace_scalars
-
-        if self.__trace_state:
-            self.__xtrace = self.__ax.plot(
-                (self.__x0, self.__x1),
-                (self.__y0, self.__y0),
-                linestyle='--',
-                color='C0'
-            )
-
-            self.__ytrace = self.__ax.plot(
-                (self.__x1, self.__x1),
-                (self.__y0, self.__y1),
-                linestyle='--',
-                color='C1'
-            )
-
-        self.__q = self.__ax.quiver(self.__x0, self.__y0, *self.__scalars, units='xy', scale=1, color=color, **self.__q_kwargs)
-        
-        if interactive:
-            self.__drag_pt = self.__ax.scatter(self.__x1, self.__y1, color='grey', alpha=0.7)
-
-            self.__annot = self.__ax.annotate('', xy=(0, 0), xytext=(10, 10), textcoords='offset points', 
-                                              bbox={'boxstyle': 'round', 'fc': 'w', 'pad': 0.4, 'alpha': 0.7})
-            self.__annot.set_visible(False)
-
-            self.__fig.canvas.mpl_connect('button_press_event', self.__on_click)
-            self.__fig.canvas.mpl_connect('button_release_event', self.__on_release)
-            self.__fig.canvas.mpl_connect('motion_notify_event', self.__on_motion)
-
-        return self.__q
+        self.__handler = VectorEventHandler(fig, ax, x, y, *self.__scalars, self.name, trace_scalars, interactive, **kwargs)
+        return self.__handler.quiver
 
     def get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str:
         '''
@@ -374,129 +320,6 @@ class Vector(object):
         if not isinstance(u, (int, float)) or not isinstance(v, (int, float)):
             raise TypeError('not all scalars are a numeric type')
 
-    def __update_quiver(self, x:float, y:float, u:float, v:float) -> None:
-        '''
-        Updates the drawn quiver and subsequently re-draws the figure.
-
-        Parameters
-        ----------
-            x : x-coordinate of the vector.
-            y : y-coordinate of the vector.
-            u : u scalar of the vector.
-            v : v scalar of the vector.
-        
-        Notes
-        -----
-            The quiver, (self.__q), is removed from the figure entirely and
-            re-drawn. The .set_UVC() method does not work here, since the vector's
-            position will be changing, and .set_UVC() only configures the u and v
-            scalars.
-        '''
-        self.__drag_pt.set_offsets([x + u, y + v])
-
-        self.__q.remove()
-        self.__q = self.__ax.quiver(x, y, u, v, units='xy', scale=1, color=self.__color, **self.__q_kwargs)
-
-        self.__fig.canvas.draw_idle()
-
-    def __update_annot(self, xdata:float, ydata:float) -> None:
-        '''
-        Updates the annotation with the given x and y data from the mouse pointer's location.
-
-        Parameters
-        ----------
-            xdata : Mouse pointer's x position.
-            ydata : Mouse pointer's y position.
-        '''
-        self.__annot.xy = (xdata, ydata)
-        self.__annot.set_text(
-            self.__annotation.format(
-                    np.arctan(self.__v / self.__u),
-                    np.arctan(self.__u / self.__v),
-                    self.__x0, 
-                    self.__y0, 
-                    self.__x1, 
-                    self.__y1,
-                    self.__u, 
-                    self.__v,
-                    np.linalg.norm([self.__u, self.__v]), 
-                    name=self.name
-                )
-            )
-
-    def __on_release(self, event:MouseEvent) -> None:
-        '''
-        Halts all warping/shifting of the vector if the mouse button has been released. Additionally
-        hides annotation. 
-
-        Parameters
-        ----------
-            event : Mouse event object passed by ~mpl_connect().
-        '''
-        if event.inaxes == self.__ax:
-            self.__annot.set_visible(False)
-            self.__fig.canvas.draw_idle()
-
-            # event.button != 2 ensures the mouse button is right/left-click,
-            # causes middle-click bugs without this check
-            if self.__drag_pt.contains(event)[0] and event.button != 2:
-                self.__dragging_pt = False
-                self.__dragging_vec = False
-
-                self.__x1 = event.xdata
-                self.__y1 = event.ydata
-                self.__u = self.__x1 - self.__x0
-                self.__v = self.__y1 - self.__y0
-
-                self.__update_quiver(self.__x0, self.__y0, self.__u, self.__v)
-            
-    def __on_motion(self, event:MouseEvent) -> None:
-        '''
-        Calculates new scalars and initial positions in the event of a drag.
-
-        Parameters
-        ----------
-          event : Mouse event object passed by ~mpl_connect().
-        '''
-        if event.inaxes == self.__ax and event.button != 2:
-            self.__x1 = event.xdata
-            self.__y1 = event.ydata
-
-            if self.__dragging_pt:
-                self.__u = self.__x1 - self.__x0
-                self.__v = self.__y1 - self.__y0
-
-            elif self.__dragging_vec:
-                self.__x0 = self.__x1 - self.__u
-                self.__y0 = self.__y1 - self.__v
-
-            if self.__trace_state and (self.__dragging_pt or self.__dragging_vec):
-                self.__xtrace[0].set_data((self.__x0, self.__x1), (self.__y0, self.__y0))
-                self.__ytrace[0].set_data((self.__x1, self.__x1), (self.__y0, self.__y1))
-
-            self.__update_annot(event.xdata, event.ydata)
-            self.__update_quiver(self.__x0, self.__y0, self.__u, self.__v)
-
-    def __on_click(self, event:MouseEvent) -> None:
-        '''
-        Calculates new scalars and initial positions in the event of a drag.
-
-        Parameters
-        ----------
-            event : Mouse event object passed by ~mpl_connect().
-        '''
-        if self.__drag_pt.contains(event)[0] and event.inaxes == self.__ax:
-
-            if event.button == 1:
-                self.__dragging_pt = True
-
-            elif event.button == 3:
-                self.__dragging_vec = True
-
-            self.__update_annot(event.xdata, event.ydata)
-            self.__annot.set_visible(True)
-            self.__fig.canvas.draw_idle()
-
 
 class VectorField(object):
     '''
@@ -526,22 +349,7 @@ class VectorField(object):
 
         self.name = str(name)
 
-        # plot method "globals"
-        self.__field_fig = None
-        self.__field_ax = None
-        self.__field_xlim = None
-        self.__field_ylim = None
-
-        self.__scale = 1
-        self.__cmap = 'Blues'
-        self.__cmap_func = 'mag'
-        self.__q = None  # Quiver instance for plot()
-        self.__q_kwargs = None
-        self.__cbar = None
-        self.__label = None  # label for cbar
-        self.__annotation = '$x = {:.2f}, y = {:.2f}$\n$mag(\\vec{{{name}}})(x, y) = {:.2f}$\n$div(\\vec{{{name}}})(x, y) = {:.2f}$\n$curl(\\vec{{{name}}})(x, y) = {:.2f}$'
-        self.__annot = None  # annotation
-        self.__func_labels = {'mag' : 'Magnitude', 'div' : 'Divergence', 'curl': 'Curl'}  # proper name of cmap_func for cbar's label
+        self.__handler = None
 
         # particles method "globals"
         self.__ani_fig = None
@@ -723,81 +531,32 @@ class VectorField(object):
 
             seaborn can be used, and makes the plots look a lot prettier. Can make interactability slow, however.
         '''
-        if not 4 <= density <= 100:
-            raise ValueError('density argument must be within range [4, 100]')
-        if cmap_func not in self.__func_labels:
-            raise ValueError('cmap_func, "{}", not recognized -- possible options are: "mag", "curl", "div"'.format(cmap_func))
+        kwargs['cmap'] = cmap
+        kwargs['scale_units'] = 'xy'
+        kwargs['angles'] = 'xy'
+        kwargs['scale'] = 1
 
-        self.__field_fig = fig
-        self.__field_ax = ax
-        self.__field_ax.set_aspect('equal')
+        self.__handler = VectorFieldEventHandler(
+            fig,
+            ax,
+            self.__unp,
+            self.__vnp,
+            self.mag,
+            self.curl,
+            self.div,
+            self.name,
+            scale,
+            density,
+            cmap_func,
+            normalize,
+            colorbar,
+            interactive,
+            **kwargs
+        )
 
-        self.__field_xlim = self.__field_ax.get_xlim()
-        self.__field_ylim = self.__field_ax.get_ylim()
+        return self.__handler.quiver
 
-        self.__normalize_state = normalize  
-        self.__cbar_state = colorbar
-        self.__interactive_state = interactive
-        
-        self.__q_kwargs = kwargs
-        self.__cmap = cmap
-        self.__cmap_func = cmap_func
-        self.__scale = scale
 
-        components = self.__create_field(scale, density)
-
-        self.__q = self.__field_ax.quiver(*components, units='xy', scale=1, cmap=self.__cmap, **self.__q_kwargs)
-
-        if self.__cbar_state:
-            plt.subplots_adjust(left=0.05)
-            c = components[-1]
-            
-            # an inset_axes is used here for a specific reason. if sliders are active, the
-            # colorbar will stretch down to encapsulate the Axes height combined with the sliders below. 
-            # an inset_axes circumvents this problem. This could be subject to change.
-            cbar_ax = inset_axes(
-                self.__field_ax,
-                width='5%',
-                height='100%',
-                loc='lower left',
-                bbox_to_anchor=(1.05, 0., 1, 1),
-                bbox_transform=self.__field_ax.transAxes,
-                borderpad=0,
-                axes_kwargs={'zorder': -1}
-            )
-            
-            self.__cbar = plt.colorbar(
-                self.__q,
-                cax=cbar_ax,
-                cmap=self.__cmap,
-                label=self.__label.format(self.__func_labels[self.__cmap_func], self.__scale),
-                ticks=np.linspace(c.min(), c.max(), 5)
-            )
-
-        if self.__interactive_state:
-            self.__annot = self.__field_ax.annotate('', xy=(0, 0), xytext=(10, 10), textcoords='offset points',
-                                                    bbox={'boxstyle': 'round', 'fc': 'w', 'pad': 0.4, 'alpha': 0.7})
-            self.__annot.set_visible(False)
-
-            self.__field_fig.canvas.mpl_connect('button_press_event', self.__on_click)
-            self.__field_fig.canvas.mpl_connect('button_release_event', self.__on_release)
-
-            # very rudimentary scale range setter -- needs improvement
-            scale_range = round(max(abs(val) for val in (self.__field_xlim + self.__field_ylim)) / 4)
-            if scale_range < 1:
-                scale_range = 1
-
-            divider = make_axes_locatable(self.__field_ax)
-
-            scale_ax = divider.append_axes('bottom', size='3%', pad=0.6) 
-            self.__scale_slider = Slider(scale_ax, 'Scale', -scale_range, scale_range, valinit=self.__scale)
-            self.__scale_slider.on_changed(self.__slider_update)
-
-            density_ax = divider.append_axes('bottom', size='3%', pad=0.1)
-            self.__density_slider = Slider(density_ax, 'Density', 4, 100, valinit=density, valstep=1)
-            self.__density_slider.on_changed(self.__slider_update)
-
-        return self.__q
 
     def particles(self, fig:Figure, ax:Axes, pts:Iterable[tuple]=None, frames:int=300, dt:float=0.01, 
                   fmt:str='o', color:str='k', alpha:float=0.7, **kwargs) -> FuncAnimation:
@@ -927,10 +686,10 @@ class VectorField(object):
             If interactivity from the plot() method is enabled, the slider values will be multiplied by the
             output of the scalar functions. Otherwise, the scale parameter will be used.
         '''
-        if self.__interactive_state:
-            return [self.__scale_slider.val * self.__unp(*pt), self.__scale_slider.val * self.__vnp(*pt)]
+        # if self.__interactive_state:
+        #     return [self.__scale_slider.val * self.__unp(*pt), self.__scale_slider.val * self.__vnp(*pt)]
 
-        return [self.__scale * self.__unp(*pt), self.__scale * self.__vnp(*pt)]
+        return [self.__unp(*pt), self.__vnp(*pt)]
 
     def __remove_pts(self, pts:np.ndarray) -> np.ndarray:
         '''
@@ -985,111 +744,3 @@ class VectorField(object):
         self.__ln.set_data(x, y)
 
         return self.__ln,
-
-    def __on_release(self, event:MouseEvent) -> None:
-        '''
-        Hides the annotation on release of the mouse button.
-
-        Parameters
-        ----------
-            event : Mouse event object passed by ~mpl_connect().
-        '''
-        if event.inaxes == self.__field_ax:
-            self.__annot.set_visible(False)
-            self.__field_fig.canvas.draw_idle()
-
-    def __on_click(self, event:MouseEvent) -> None:
-        '''
-        Updates and displays the annotation on click of the axes.
-
-        Parameters
-        ----------
-            event : Mouse event object passed by ~mpl_connect().
-        '''
-        if event.inaxes == self.__field_ax:
-            self.__annot.xy = (event.xdata, event.ydata)
-            self.__annot.set_text(
-                self.__annotation.format(
-                    event.xdata, 
-                    event.ydata, 
-                    self.mag(event.xdata, event.ydata), 
-                    self.div(event.xdata, event.ydata), 
-                    self.curl(event.xdata, event.ydata), 
-                    name=self.name
-                    )
-                )
-            
-            self.__annot.set_visible(True)
-            self.__field_fig.canvas.draw_idle()
-
-    def __slider_update(self, _) -> None:
-        '''
-        Re-draws vector field on update of a slider.
-
-        Parameters
-        ----------
-            _ : Dummy parameter for the argument emitted by ~Slider.on_changed().
-        '''
-        components = self.__create_field(self.__scale_slider.val, self.__density_slider.val)
-
-        self.__q.remove()
-        self.__q = self.__field_ax.quiver(*components, units='xy', scale=1, cmap=self.__cmap, **self.__q_kwargs)
-
-        if self.__cbar_state:
-            self.__cbar.set_label(self.__label.format(self.__func_labels[self.__cmap_func], self.__scale_slider.val))
-
-        self.__field_fig.canvas.draw_idle()
-
-    def __create_field(self, scale:float, density:int) -> tuple:
-        '''
-        Creates a grid of coordinate points and calculates all corresponding vectors. Additionally
-        maps colors from the cmap dependent on the cmap_func.
-
-        Parameters
-        ----------
-            scale : Scalar value applied to each vector.
-            density : A measure of how many vectors to plot within the field.
-                - An evenly-spaced grid of density*density vectors is plotted within on the axes.
-                - Value must be within range [4, 100]. 
-        
-        Returns
-        -------
-            tuple : Returns a tuple of the x, y, u, v and c arrays for each vector in the field. 
-                - x : Array of x-coordinates.
-                - y : Array of y-coordinates.
-                - u : Array of u scalars.
-                - v : Array of v scalars.
-                - c : Array of values used in determining the mapping of colors.
-        '''
-        x, y = np.meshgrid(
-            np.linspace(*self.__field_xlim, int(density)),
-            np.linspace(*self.__field_ylim, int(density))
-        )
-
-        u, v = (
-            self.__unp(x, y),
-            self.__vnp(x, y)
-        )
-
-        m = np.sqrt(u**2 + v**2)
-
-        if self.__normalize_state:
-            with np.errstate(all='ignore'):
-                u = (u / m) * scale
-                v = (v / m) * scale
-                self.__label = 'Sampled {} (Scale: {:.2f}, Normalized)'
-        else:
-            u = u * scale
-            v = v * scale
-            self.__label = 'Sampled {} (Scale: {:.2f})'
-        
-        if self.__cmap_func == 'mag':
-            c = m
-        elif self.__cmap_func == 'div':
-            c = self.div(x, y)
-        elif self.__cmap_func == 'curl':
-            c = self.curl(x, y)
-        
-        c = np.full_like(x, c)
-
-        return x, y, u, v, c
