@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-beta (Last Commit: 8/6/20)
+### 0.1.0-beta (Last Commit: 8/6/20)
 
 - `Vector`
     - General-use runtime has been decreased.
@@ -27,6 +27,6 @@
     - Re-wording of many method docstrings.
 
 
-## 0.0.1-beta (Last Commit: 7/1/20)
+### 0.0.1-beta (Last Commit: 7/1/20)
 
 Initial version.
