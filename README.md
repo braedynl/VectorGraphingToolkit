@@ -1,12 +1,12 @@
 # VectorGraphingToolkit
 
-*Current Version: 0.0.1-beta*
+**Current Version: 0.1.0-beta ([Changelog](CHANGELOG.md))**
 
 A simplistic vector/vector field visualization tool built on top of `matplotlib`.
 
 I made this purely for fun. Can it be used for anything practical? I have no idea -- I'm an amateur programmer, not a physicist. If it does prove useful to anyone, I would love to hear about your use-case and your take on some improvements that could be made. I am extremely open to collaboration as well, if you want to contribute to the project, please get in contact. 
 
-Feel free to submit bugs, feature requests, etc. to the issues page.
+Feel free to submit bugs, feature requests, etc. to the Issues page.
 
 <p align="center"> 
   <img src=examples/ex_intro.gif>
@@ -21,8 +21,6 @@ Through terminal:
 ```
 $ python setup.py install
 ```
-
-Requirements can be found [here](requirements.txt). Currently not on PyPi. 
 
 ## Documentation
 
@@ -109,7 +107,7 @@ w = <-3.05, 4.50>
 ```
 Notes:
 
-You'll notice that the scalars are always rounded to the second decimal place. Rounding only occurs during invocation of the `__str__` method, the scalars are kept un-rounded internally. You can view the un-rounded scalars by calling `repr()`. 
+Scalars are kept un-rounded internally. You can use `repr()` to see the scalars un-rounded. `__str__()` will always round to the second decimal place. 
 
 Conversion from an array is not inherently supported by the constructor. Use the `*` operator if you want to unpack two scalar values from an array. 
 
@@ -232,7 +230,7 @@ True
 v1 = <2.00, 2.00>
 ```
 
-The `~` operator will transform the vector into its unit vector form, while the `^` operator will take the dot product between two `Vector` instances. There are method function equivalents for both, which can be seen in the next section below. 
+The `~` operator will transform the vector into its unit vector form, while the `^` operator will take the dot product between two `Vector` instances. There are method function equivalents for both, which can be seen in the next section. 
 
 ```python
 from vgtk import Vector
@@ -257,9 +255,9 @@ Back to [table of contents](#table-of-contents).
 ## Method Functions
 
 ### `dot`
-Calculates the dot product between two `Vector` instances. Returns `float`.
+Calculates the dot product between two `Vector` instances.
 ```python
-dot(self, other:Vector) -> float
+def dot(self, other:Vector) -> float:
 ```
 - `other` : Another `Vector` instance.
 
@@ -280,9 +278,9 @@ Out:
 ```
 
 ### `angle`
-Measures the radian angle between two `Vector` instances. Returns `float`.
+Measures the radian angle between two `Vector` instances.
 ```python
-angle(self, other:Vector, degrees:bool=False) -> float
+def angle(self, other:Vector, degrees:bool=False) -> float:
 ```
 - `other` : Another `Vector` instance. 
 - `degrees` : Returns angle measured in degrees if `True`.
@@ -307,9 +305,9 @@ Out:
 ```
 
 ### `unit`
-Converts the `Vector` into its equivalent unit vector form. Returns `self`. 
+Converts the `Vector` into its equivalent unit vector form.
 ```python
-unit(self) -> self
+def unit(self) -> self:
 ```
 Example:
 ```python
@@ -329,18 +327,18 @@ v = <0.33, -0.94>
 ```
 
 ### `plot`
-Plots the vector on a given `matplotlib` `Axes`. Returns the created `~quiver.Quiver` instance. 
+Plots the vector on a given `matplotlib` `Axes`.
 ```python
-plot(self, fig:Figure, ax:Axes, x:float=0, y:float=0, color:str='skyblue', trace_scalars:bool=False, interactive:bool=False, **kwargs) -> Quiver
+def plot(self, fig:Figure, ax:Axes, x:float=0, y:float=0, color:str='skyblue', trace_scalars:bool=False, interactive:bool=False, **kwargs) -> matplotlib.quiver.Quiver:
 ```
-- `fig` : A `matplotlib` `Figure` instance.
-- `ax` : A two-dimensional `matplotlib` `Axes` instance. 
+- `fig` : A `matplotlib.figure.Figure` instance.
+- `ax` : A `matplotlib.axes.Axes` instance. 
 - `x` : Starting x-coordinate of the vector. 
 - `y` : Starting y-coordinate of the vector. 
 - `color` : Color of the vector. Argument passed to `~Axes.quiver()`. Options can be found [here.](https://matplotlib.org/3.1.0/gallery/color/named_colors.html)
 - `trace_scalars` : Option to plot dashed lines that represent the scalar values of the vector. 
-  - The u scalar is represented in blue (`'C0'`), the v scalar is represented in orange (`'C1'`). 
-- `interactive` : Option to make the vector interactable. A point is plotted at the tip of the vector that allows the user to warp, shift, and view various details about the vector. 
+  - The u scalar is represented as blue (C0), the v scalar is represented as orange (C1). 
+- `interactive` : Option to make the vector plot interactable. A point is plotted at the tip of the vector that allows the user to warp, shift, and view various details about the vector. 
   - Holding left-click will drag the vector's tip to the mouse pointer's location, while the base of the vector remains fixed. 
   - Holding right-click will drag the entire vector to the mouse pointer's location, while the magnitude and direction remain fixed. 
   - Holding middle-click will show the vector's details without warping or shifting.
@@ -406,14 +404,12 @@ plt.show()
 
 Notes:
 
-The `~Axes.quiver()` method is called with arguments `units='xy'` and `scale=1`. This is to prevent warping and auto-scaling from `matplotlib`, and has the consequence of the user not being able to call these parameters in `kwargs`. 
-
-`seaborn` can be used, and makes the plots look a lot prettier. Can make interactability slow, however. 
+`'scale_units'`, `'angles'` and `'scale'` are overwritten in `kwargs` to prevent warping.
 
 ### `get_latex_str`
-Returns a `str` of the `Vector` instance in LaTeX formatting.
+Returns a string of the `Vector` instance in LaTeX format.
 ```python
-get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str
+def get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str:
 ```
 - `notation` : Changes notation style of the string.
   - `'angled'` : [Ordered set notation, angle-bracket variant.](https://en.wikipedia.org/wiki/Vector_notation#Ordered_set_notation)
@@ -561,9 +557,9 @@ Back to [table of contents](#table-of-contents).
 ## Class Methods
 
 ### `from_grad`
-Creates a `VectorField` from the [gradient](https://en.wikipedia.org/wiki/Gradient) of a function. 
+Creates a `VectorField` from the [gradient](https://en.wikipedia.org/wiki/Gradient) of a given function. 
 ```python
-from_grad(cls, f:Union[str, float, 'expr'], name:str='F') -> VectorField
+def from_grad(cls, f:Union[str, float, 'expr'], name:str='F') -> VectorField:
 ```
 - `f` : A function of two variables (must be x and y). 
 - `name` : Name of the vector field. Used for plot interactivity and string methods.
@@ -588,7 +584,7 @@ F = <y, x>
 ### `from_stream`
 Creates a `VectorField` from a given [stream function](https://en.wikipedia.org/wiki/Stream_function).
 ```python
-from_stream(cls, psi:Union[str, float, 'expr'], name:str='F') -> VectorField
+def from_stream(cls, psi:Union[str, float, 'expr'], name:str='F') -> VectorField:
 ```
 - `psi` : A stream function of two variables (must be x and y).
 - `name` : Name of the vector field. Used for plot interactivity and string methods.
@@ -615,41 +611,37 @@ Back to [table of contents](#table-of-contents).
 ## Method Functions
 
 ### `is_solenoidal`
-Tests if the vector field is [solenoidal](https://en.wikipedia.org/wiki/Solenoidal_vector_field). Returns `bool`.
+Tests if the vector field is [solenoidal](https://en.wikipedia.org/wiki/Solenoidal_vector_field).
 ```python
-is_solenoidal(self) -> bool
+def is_solenoidal(self) -> bool:
 ```
 
 ### `is_conservative`
-Tests if the vector field is [conservative](https://en.wikipedia.org/wiki/Conservative_vector_field). Returns `bool`.
+Tests if the vector field is [conservative](https://en.wikipedia.org/wiki/Conservative_vector_field).
 ```python
-is_conservative(self) -> bool
+def is_conservative(self) -> bool:
 ```
 
 ### `plot`
-Plots the vector field on a given `matplotlib` `Axes`. Returns the created `~quiver.Quiver` instance. 
+Plots the vector field on a given `matplotlib` `Axes`.
 ```python
-plot(self, fig:Figure, ax:Axes, scale:float=1, density:int=10, cmap:Union[str, ListedColormap]='Blues', cmap_func:Union['mag', 'div', 'curl']='mag', normalize:bool=True, colorbar:bool=True, interactive:bool=False, **kwargs) -> Quiver
+def plot(self, fig:Figure, ax:Axes, scale:float=1, density:int=10, cmap:Union[str, ListedColormap]='Blues', normalize:bool=True, colorbar:bool=True, interactive:bool=False, **kwargs) -> matplotlib.quiver.Quiver:
 ```
-- `fig` : A `matplotlib` `Figure` instance.
-- `ax` : A two-dimensional `matplotlib` `Axes` instance. 
+- `fig` : A `matplotlib.figure.Figure` instance.
+- `ax` : A `matplotlib.axes.Axes` instance. 
 - `scale` : Scalar value applied to each vector. See notes below for more details.
-- `density` : A measure of how many vectors to plot within the field. An evenly-spaced grid of `density`\*`density` vectors is plotted on the axes.
-  - Value must be within range `4 <= density <= 100`. 
-- `cmap` : A `matplotlib` colormap applied to the field. Can pass a built-in or custom colormap. Built-in colormap options can be found [here.](https://matplotlib.org/3.1.0/tutorials/colors/colormaps.html)
-- `cmap_func` : One of the three `VectorField` properties to use in determination of the color mapping.
-  - `'mag'` : Maps colors to the vectors based on their respective magnitudes. 
-  - `'div'` : Maps colors to the vectors based on the divergence of the vectors' initial positions. 
-  - `'curl'` : Maps colors to the vectors based on the curl of the vectors' initial positions. 
+- `density` : A measure of how many vectors to plot within the field. 
+  - An evenly-spaced grid of `density`\*`density` vectors is plotted.
+  - Value must be within range [4, 100]. 
+- `cmap` : A `matplotlib` colormap applied to the field. 
+  - Can pass a built-in or custom colormap. Built-in colormap options can be found [here.](https://matplotlib.org/3.1.0/tutorials/colors/colormaps.html)
 - `normalize` : Option to normalize each vector. See notes below for more details.
 - `colorbar` : Option to display a colorbar of the color mapping.
-  - The values shown, both on the colorbar ticks and the colorbar's label, will vary depending on the chosen `scale`, `density`, and `cmap_func`.
+  - The values shown, both on the colorbar ticks and the colorbar's label, will vary depending on the chosen `scale` and `density`.
 - `interactive` : Option to make the vector field interactable. The plot will detect mouse clicks, and sliders will be added below the `ax`. 
   - Clicking and holding on a point within the `ax` will display an annotation describing the curl, divergence and magnitude at that point. 
-  - The scale and density sliders allow for adjustment of the field, and function just as the `scale` and `density` parameters do.
-    - The upper-bound of the scale slider is calculated using the x and y limits of the `ax`:
-    - `round(max(abs(val) for val in (xlim + ylim)) / 4)`
-    - Values less than 1 will be rounded to 1. 
+  - The scale and density sliders adjust the field's `scale` and `density` in realtime. 
+  - The upper-bound of the scale slider is calculated using the x and y limits of the axes.
 - `kwargs` : Additional arguments passed to `~Axes.quiver()`. Options can be found [here.](https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.quiver.html)
 
 Example:
@@ -712,22 +704,24 @@ plt.show()
 
 Notes:
 
-When `normalize=True`, all vectors will be converted into their unit vector form (their scalars get divided by their magnitude). The `scale` argument is then applied *after*. An auto-scaling algorithm could be implemented in the future, since extremely small figures will have huge vectors and extremely large figures will have small vectors without adjusting the `scale` from its default, `1`. 
+When `normalize=True`, all vectors will be converted into their unit vector form. The scale argument is then applied after. An auto-scaling algorithm could be implemented in the future, since extremely small axes will have huge vectors and extremely large axes will have small vectors without adjusting the scale from its default. 
 
-Like the [`Vector` class's `plot()` method](#plot), `~Axes.quiver()` is called with arguments `units='xy'` and `scale=1` to prevent warping and auto-scaling from `matplotlib`, and has the consequence of the user not being able to call these parameters in `kwargs`. This could be subject to change in the future, since `matplotlib` could be left to take care of the issue described above. 
+`'scale_units'`, `'angles'` and `'scale'` are overwritten in `kwargs` to prevent warping.
 
 ### `particles`
-Animates particles on a given `matplotlib` `Axes`, where relative velocities are modeled by the field. Returns the created `matplotlib.animation.FuncAnimation` instance. 
+Animates particles on a given `matplotlib` `Axes`, where relative velocities are modeled by the field.
 ```python
-particles(self, fig:Figure, ax:Axes, pts:Iterable[tuple]=None, frames:int=300, dt:float=0.01, fmt:str='o', color:str='k', alpha:float=0.7, **kwargs) -> FuncAnimation
+def particles(self, fig:Figure, ax:Axes, pts:Iterable[tuple]=None, frames:int=300, dt:float=0.01, blit:bool=True, fmt:str='o', color:str='k', alpha:float=0.7, **kwargs) -> matplotlib.animation.FuncAnimation:
 ```
-- `fig` : A `matplotlib` `Figure` instance.
-- `ax` : A two-dimensional `matplotlib` `Axes` instance. 
+- `fig` : A `matplotlib.figure.Figure` instance.
+- `ax` : A `matplotlib.axes.Axes` instance. 
 - `pts` : An array of coordinate pairs that set the initial particle positions.
   - If `None`, 50 randomly-placed particles will be plotted. 
 - `frames` : The amount of frames to run the animation for.
-- `dt` : The change in time from one frame to the next. 
-  - I recommend keeping this value extremely small. Larger values may result in ludicrously fast particle speeds. 
+- `dt` : The change in time between each frame. 
+  - I recommend keeping this value small.
+- `blit` : Option to blit particle animation.
+  - Should be set to `False` if the `plot()` method is active with interactivity enabled.
 - `fmt` : Marker style of the particles. Argument passed to `~Axes.plot()`. Options can be found [here.](https://matplotlib.org/3.2.2/api/_as_gen/matplotlib.axes.Axes.plot.html)
 - `color` : Color of the particles. Argument passed to `~Axes.plot()`. Options can be found [here.](https://matplotlib.org/3.1.0/gallery/color/named_colors.html)
 - `alpha` : Transparency of the particles. Argument passed to `~Axes.plot()`. 
@@ -803,14 +797,11 @@ Out:
   <img src=examples/ex_plot6.gif>
 </p>
 
-Notes:
-
-The velocities of the particles are relative. If the `plot()` method is active, its `scale` parameter *will* affect the speed of the particles. Additionally, if `interactive=True`, particle velocities will reflect the value set by the scale slider. The particle simulation will slow down significantly -- this is because `matplotlib` isn't the greatest at handling animations. When `interactive=False`, however, the animation will be [blitted](https://en.wikipedia.org/wiki/Bit_blit), and will perform considerably faster and smoother.
 
 ### `get_latex_str`
-Returns a `str` of the `VectorField` instance in LaTeX formatting.
+Returns a `str` of the `VectorField` instance in LaTeX format.
 ```python
-get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str
+def get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str:
 ```
 - `notation` : Changes notation style of the string.
   - `'angled'` : [Ordered set notation, angle-bracket variant.](https://en.wikipedia.org/wiki/Vector_notation#Ordered_set_notation)

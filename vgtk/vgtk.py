@@ -6,17 +6,20 @@ A simplistic vector/vector field visualization tool built on top of matplotlib.
 
 Recommended import:
 
-  from vgtk import Vector, VectorField
+    from vgtk import Vector, VectorField
 
-Version: 0.0.1-beta
+Version: 0.1.0-beta
 
 GitHub/Docs: https://github.com/braedynl/VectorGraphingToolkit/
 
 Author: Braedyn Lettinga
 
+Collaborators: Ashu Acharya
+
 Credits: Heiko Hergert, Ph.D., Tony S. Yu, Ph.D.
 
 This project is licensed under the MIT License - see the page below for more details:
+
 https://github.com/braedynl/VectorGraphingToolkit/blob/master/LICENSE
 '''
 
@@ -24,27 +27,16 @@ from __future__ import annotations
 
 from typing import Callable, Iterable, Union
 
-import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import sympy as sym
-from matplotlib.animation import FuncAnimation
 from matplotlib.axes import Axes
-from matplotlib.backend_bases import MouseEvent
 from matplotlib.colors import ListedColormap
 from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
-from matplotlib.quiver import Quiver
-from matplotlib.widgets import Button, Slider
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-from scipy.integrate import odeint
 from sympy.utilities.lambdify import lambdastr, lambdify
 
-
-from vgtk.events import VectorEventHandler, VectorFieldEventHandler
-
-
-np.warnings.filterwarnings('ignore')
+from vgtk.handlers import (_ParticleSimulationHandler, _VectorEventHandler,
+                           _VectorFieldEventHandler)
 
 
 class Vector(object):
@@ -57,19 +49,18 @@ class Vector(object):
         v : Base v scalar.
         name : Name of the vector. Used for plot interactivity and string methods.
     
-    Raises
-    ------
-        TypeError : If not all scalars are a numeric type.
-    
     Notes
     -----
-        'u', 'v', and 'name' are all attributes, and have corresponding setters.
-        There is also a 'scalars' getter/setter, which returns a numpy ndarray
+        `u`, `v`, and `name` are all attributes, and have corresponding setters.
+        There is also a `scalars` getter/setter, which returns a `numpy.ndarray`
         of the two scalars. It can be set with any iterable of shape (2, ).
 
-        Scalars are kept un-rounded internally. You can use repr() to see the 
-        scalars un-rounded. __str__() will always round to the second decimal
+        Scalars are kept un-rounded internally. You can use `repr()` to see the 
+        scalars un-rounded. `__str__()` will always round to the second decimal
         place. 
+
+        Conversion from an array is not inherently supported by the constructor. 
+        Use the `*` operator if you want to unpack two scalar values from an array. 
     '''
 
     def __init__(self, u:float, v:float, name:str='v'):
@@ -102,11 +93,11 @@ class Vector(object):
         return Vector(*(self.__scalars * a), '({}*{})'.format(a, self.name))
 
     def __rmul__(self, a:float) -> Vector:
-        '''Reverse multiplies vector by a scalar value.'''
+        '''Multiplies vector by a scalar value.'''
         return self.__mul__(a)
 
     def __imul__(self, a:float) -> self:
-        '''In-place multiples vector by a scalar value.'''
+        '''Multiples vector by a scalar value in-place.'''
         self.__scalars *= a 
         return self
 
@@ -115,7 +106,7 @@ class Vector(object):
         return Vector(*(self.__scalars / a), '({}/{})'.format(self.name, a))
     
     def __idiv__(self, a:float) -> self:
-        '''In-place divides vector by a scalar value.'''
+        '''Divides vector by a scalar value in-place.'''
         self.__scalars /= a 
         return self
     
@@ -147,14 +138,14 @@ class Vector(object):
 
     def __hash__(self) -> int:
         '''Returns id of self.'''
-        return id(self)  # cannot be hash(self) -- will break
+        return id(self)
 
     def __getitem__(self, index:int) -> float:
-        '''Obtains the u or v scalar from the array of scalars.'''
+        '''Obtains the u/v scalar from the array of scalars.'''
         return self.__scalars[index]
     
     def __setitem__(self, index:int, value:float) -> None:
-        '''Sets the u or v scalar from the array of scalars.'''
+        '''Sets the u/v scalar from the array of scalars.'''
         self.__scalars[index] = value
 
     def __str__(self) -> str:
@@ -193,8 +184,7 @@ class Vector(object):
     @scalars.setter
     def scalars(self, arr:Iterable[float]) -> None:
         '''Sets array of scalars.'''
-        if len(arr) != 2:
-            raise ValueError('dimension mismatch')
+        if len(arr) != 2: raise ValueError('dimension mismatch')
         self.__scalar_handle(arr[0], arr[1])    
         self.__scalars = np.array(arr, dtype=np.dtype(float))
 
@@ -235,25 +225,25 @@ class Vector(object):
 
     def unit(self) -> self:
         '''Converts Vector into its equivalent unit vector form. Returns self.'''
-        self.__scalars = self.__scalars / self.mag  # `/=` doesn't work here for some reason
+        self.__scalars = self.__scalars / self.mag
         return self
 
     def plot(self, fig:Figure, ax:Axes, x:float=0, y:float=0, color:str='skyblue', trace_scalars:bool=False, 
-             interactive:bool=False, **kwargs) -> Quiver:
+             interactive:bool=False, **kwargs) -> matplotlib.quiver.Quiver:
         '''
         Plots the vector on a given matplotlib Axes.
 
         Parameters
         ----------
-            fig : A matplotlib Figure instance.
-            ax : A two-dimensional matplotlib Axes instance.
+            fig : A matplotlib.figure.Figure instance.
+            ax : A matplotlib.axes.Axes instance.
             x : Starting x-coordinate of the vector.
             y : Starting y-coordinate of the vector.
             color : Color of the vector. Argument passed to ~Axes.quiver().
             trace_scalars : Option to plot dashed lines that represent the scalar values of the vector.
-                - The u scalar is represented in blue ('C0'), the v scalar is represented in orange ('C1')
-            interactive : Option to make the vector interactable.
-                - A point is plotted at the tip of the vector that allows the user to warp, shift and view
+                - The u scalar is represented as blue (C0), the v scalar is represented as orange (C1)
+            interactive : Option to make the vector plot interactable.
+                - A point is plotted at the tip of the vector that allows the user to warp, shift and see
                   various details about the vector.
                 - Holding left-click will drag the vector's tip to the mouse pointer's location, while the
                   base of the vector stays fixed.
@@ -273,23 +263,20 @@ class Vector(object):
         
         Notes
         -----
-            The ~Axes.quiver() method is called with arguments units='xy' and scale=1. This is to prevent warping
-            and auto-scaling from matplotlib, and has the consequence of the user not being able to call these
-            parameters in kwargs. 
-
-            seaborn can be used, and makes the plots look a lot prettier. Can make interactability slow, however.
+            'scale_units', 'angles' and 'scale' are overwritten in `kwargs` to prevent warping.
         '''
         kwargs['color'] = color
         kwargs['scale_units'] = 'xy'
         kwargs['angles'] = 'xy'
         kwargs['scale'] = 1
 
-        self.__handler = VectorEventHandler(fig, ax, x, y, *self.__scalars, self.name, trace_scalars, interactive, **kwargs)
+        self.__handler = _VectorEventHandler(fig, ax, x, y, *self.__scalars, self.name, trace_scalars, interactive, **kwargs)
+        
         return self.__handler.quiver
 
     def get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str:
         '''
-        Returns a string of the Vector instance in LaTeX formatting.
+        Returns a string of the Vector instance in LaTeX format.
 
         Parameters
         ----------
@@ -300,7 +287,7 @@ class Vector(object):
         
         Returns
         -------
-            str : Vector instance in LaTeX formatting.
+            str : Vector instance in LaTeX format.
         
         References
         ----------
@@ -333,9 +320,14 @@ class VectorField(object):
     
     Notes
     -----
-        'expr' represents a sympy expression.
+        'expr' represents a general sympy expression.
 
-        'u', 'v', and 'name' are all attributes, and have corresponding setters.
+        `u` and `v` arguments are passed to `sympy.sympify()`. Expressions are ran via the 
+        `exec()` function, which means that formulae must be in proper Python syntax. 
+        Many common mathematical functions can be written without the use of `sympy`, like 
+        `'cos()'`, `'sin()'`, `'tan()'`, etc. To express e^x as a string, use `'exp()'`.
+
+        `u`, `v`, and `name` are all attributes, and have corresponding setters.
     '''
 
     def __init__(self, u:Union[str, float, 'expr'], v:Union[str, float, 'expr'], name:str='F'):
@@ -350,28 +342,14 @@ class VectorField(object):
         self.name = str(name)
 
         self.__handler = None
-
-        # particles method "globals"
-        self.__ani_fig = None
-        self.__ani_ax = None
-        self.__ani_xlim = None
-        self.__ani_ylim = None
-
-        self.__ani = None  # FuncAnimation instance for particles()
-        self.__ln = None  # Line2D array for all particles
-        self.__pts = None  # array of particle positions
-
-        # state trackers
-        self.__normalize_state = True  
-        self.__cbar_state = True
-        self.__interactive_state = False
+        self.__particle_handler = None
 
     def __str__(self) -> str:
         '''Returns a string of the vector field in angle-bracket notation.'''
         return '{} = <{}, {}>'.format(self.name, self.__usym, self.__vsym)
     
     def __repr__(self) -> str:
-        '''Returns a string of the vector field in angle-bracket notation, with lambda parameters.'''
+        '''Returns a string of the vector field in angle-bracket notation with lambda parameters.'''
         x, y = sym.symbols('x y')
         return '{} = <{}, {}>'.format(self.name, lambdastr((x, y), self.__usym), lambdastr((x, y), self.__vsym))
 
@@ -406,7 +384,7 @@ class VectorField(object):
 
         Parameters
         ----------
-            f : A function of two variables (must be x and y)
+            f : A function of two variables (must be x and y).
             name : Name of the vector field. Used for plot interactivity and string methods.
         
         Returns
@@ -448,16 +426,16 @@ class VectorField(object):
         return lambdify((x, y), sym.sqrt((self.__usym)**2 + (self.__vsym)**2), 'numpy')
 
     @property
-    def curl(self) -> Callable[[float, float], float]:
-        '''The curl function of the vector field.'''
-        x, y = sym.symbols('x y')
-        return lambdify((x, y), sym.diff(self.__vsym, x) - sym.diff(self.__usym, y), 'numpy')
-
-    @property
     def div(self) -> Callable[[float, float], float]:
         '''The divergence function of the vector field.'''
         x, y = sym.symbols('x y')
         return lambdify((x, y), sym.diff(self.__usym, x) + sym.diff(self.__vsym, y), 'numpy')
+
+    @property
+    def curl(self) -> Callable[[float, float], float]:
+        '''The curl function of the vector field.'''
+        x, y = sym.symbols('x y')
+        return lambdify((x, y), sym.diff(self.__vsym, x) - sym.diff(self.__usym, y), 'numpy')
 
     def is_solenoidal(self) -> bool:
         '''Tests if the vector field is solenoidal. Returns bool.'''
@@ -470,47 +448,35 @@ class VectorField(object):
         return True if sym.diff(self.__vsym, x) - sym.diff(self.__usym, y) == 0 else False
 
     def plot(self, fig:Figure, ax:Axes, scale:float=1, density:int=10, cmap:Union[str, ListedColormap]='Blues', 
-             cmap_func:Union['mag', 'div', 'curl']='mag', normalize:bool=True, colorbar:bool=True, 
-             interactive:bool=False, **kwargs) -> Quiver:
+             normalize:bool=True, colorbar:bool=True, interactive:bool=False, **kwargs) -> matplotlib.quiver.Quiver:
         '''
         Plots the vector field on a given matplotlib Axes.
 
         Parameters
         ----------
-            fig : A matplotlib Figure instance.
-            ax : A two-dimensional matplotlib Axes instance.
+            fig : A matplotlib.figure.Figure instance.
+            ax : A matplotlib.axes.Axes instance.
             scale : Scalar value applied to each vector. See notes below for more details.
             density : A measure of how many vectors to plot within the field.
-                - An evenly-spaced grid of density*density vectors is plotted on the axes.
-                - Value must be within range [4, 100]. 
+                - An evenly-spaced grid of density*density vectors is plotted.
+                - Value must be within range [4, 100].
             cmap : A matplotlib colormap applied to the field.
-                - Can pass a built-in or custom colormap. 
-            cmap_func : One of the three VectorField properties to use in determination of the color mapping.
-                - 'mag' : Maps colors to the vectors based on their respectives magnitudes.
-                - 'div' : Maps colors to the vectors based on the divergence of the vectors' initial positions.
-                - 'curl' : Maps colors to the vectors based on the curl of the vectors' initial positions.
-            normalize : Option to normalize each vector. See notes below for more details.
+                - Can pass a built-in or custom colormap.
+            normalize : Option to normalize vectors. See notes below for more details.
             colorbar : Option to display a colorbar of the color mapping.
-                - The values show, both on the colorbar ticks and the colorbar's label, will vary depending
-                  on the chosen scale, density and cmap_func.
-            interactive : Option to make the vector field interactable.
+                - The values shown, both on the colorbar ticks and the colorbar's label, will vary depending
+                  on the chosen scale and density.
+            interactive : Option to make the vector field plot interactable.
                 - The plot will detect mouse clicks, and sliders will be added below the axes.
                 - Clicking and holding on a point within the axes will display an annotation describing the
                   curl, divergence, and magnitude at that point.
-                - The scale and density sliders allow for further adjustment of the field, and function just
-                  as the scale and density parameters do.
-                - The upper-bound of the scale slider is calculated using the x and y limits of the ax:
-                  ```round(max(abs(val) for val in (xlim + ylim)) / 4)```
-                - Values less than 1 will be rounded to 1.
+                - The scale and density sliders adjust the field's scale and density in realtime. 
+                - The upper-bound of the scale slider is calculated using the x and y limits of the axes.
             **kwargs : Additional arguments passed to ~Axes.quiver(). 
         
         Returns
         -------
             matplotlib.quiver.Quiver : The created Quiver instance.
-        
-        Raises
-        ------
-            ValueError : If density is not within range [4, 100], or cmap_func is none of the possible options.
         
         References
         ----------
@@ -519,60 +485,42 @@ class VectorField(object):
         
         Notes
         -----
-            When normalize=True, all vectors will be converted into their unit vector form (their scalars get
-            divided by their magnitude). The scale argument is then applied after. An auto-scaling algorithm
-            could be implemented in the future, since extremely small axes will have huge vectors and extremely
-            large axes will have small vectors, without adjust the scale from its default, 1. 
+            When normalize=True, all vectors will be converted into their unit vector form. The scale argument 
+            is then applied after. An auto-scaling algorithm could be implemented in the future, since extremely 
+            small axes will have huge vectors and extremely large axes will have small vectors without adjusting 
+            the scale from its default. 
 
-            Like the Vector class's plot() method, ~Axes.quiver() is called with arguments units='xy' and scale=1
-            to prevent warping and auto-scaling from matplotlib, and has the consequence of the user not being able
-            to call these parameters in kwargs. This could be subject to change in the future, since matplotlib could
-            be left to take care of the issue described above.
-
-            seaborn can be used, and makes the plots look a lot prettier. Can make interactability slow, however.
+            'scale_units', 'angles' and 'scale' are overwritten in `kwargs` to prevent warping.
         '''
+        if not 4 <= density <= 100: raise ValueError('density argument must be within range [4, 100]')
+
         kwargs['cmap'] = cmap
         kwargs['scale_units'] = 'xy'
         kwargs['angles'] = 'xy'
         kwargs['scale'] = 1
 
-        self.__handler = VectorFieldEventHandler(
-            fig,
-            ax,
-            self.__unp,
-            self.__vnp,
-            self.mag,
-            self.curl,
-            self.div,
-            self.name,
-            scale,
-            density,
-            cmap_func,
-            normalize,
-            colorbar,
-            interactive,
-            **kwargs
-        )
+        self.__handler = _VectorFieldEventHandler(fig, ax, self.__unp, self.__vnp, self.mag, self.div, self.curl, 
+                                                  self.name, scale, density, normalize, colorbar, interactive, **kwargs)
 
         return self.__handler.quiver
 
-
-
-    def particles(self, fig:Figure, ax:Axes, pts:Iterable[tuple]=None, frames:int=300, dt:float=0.01, 
-                  fmt:str='o', color:str='k', alpha:float=0.7, **kwargs) -> FuncAnimation:
+    def particles(self, fig:Figure, ax:Axes, pts:Iterable[tuple]=None, frames:int=300, dt:float=0.01, blit:bool=True,
+                  fmt:str='o', color:str='k', alpha:float=0.7, **kwargs) -> matplotlib.animation.FuncAnimation:
         '''
         Animates particles on a given matplotlib Axes, where relative velocities are modeled by the field.
 
         Parameters
         ----------
-            fig : A matplotlib Figure instance.
-            ax : A two-dimensional matplotlib Axes instance.
+            fig : A matplotlib.figure.Figure instance.
+            ax : A matplotlib.axes.Axes instance.
             pts : An array of coordinate pairs that set the initial particle positions.
-                - If None, 50 randomly-placed particles will be plotted.
+                - If `None`, 50 randomly-placed particles will be plotted.
             frames : The amount of frames to run the animation for.
-            dt : The change in time from one frame to the next.
-                - I recommend keeping this value extremely small. Larger values may result in ludicrously
-                  fast particle speeds.
+            dt : The change in time between each frame.
+                - I recommend keeping this value small.
+            blit : Option to blit particle animation. 
+                - Should be set to `False` if the `plot()` method is active with
+                  interactivity enabled.
             fmt : Marker style of the particles. Argument passed to ~Axes.plot().
             color : Color of the particles. Argument passed to ~Axes.plot().
             alpha : Transparency of the particles. Argument passed to ~Axes.plot().
@@ -585,48 +533,24 @@ class VectorField(object):
         References
         ----------
             color options: https://matplotlib.org/3.1.0/gallery/color/named_colors.html
-            ~Axes.plot() arguments: https://matplotlib.org/3.2.1/api/_as_gen/matplotlib.axes.Axes.plot.html
-
-        Notes
-        -----
-            The velocities of the particles are relative. If the plot() method is active, its scale parameter
-            will affect the speed of the particles. Additionally, if interactive=True, particle velocities will
-            reflect the value set by the scale slider. The particle simulation will slow down significantly --
-            unfortunately because matplotlib isn't the greatest at handling animations. When interactive=False,
-            however, the animation will be blitted, and will perform considerably faster and smoother.
+            kwargs options: https://matplotlib.org/3.2.1/api/_as_gen/matplotlib.axes.Axes.plot.html
         
         Credits
         -------
-            Heiko Hergert, Ph.D. - Helped with my conceptualization of the flow.
+            Heiko Hergert, Ph.D. - Helped with conceptualization.
             Tony S. Yu, Ph.D. - The only human being on the planet that has an example.
 
-            Much of the particle animation work is based on Dr. Yu's article, which can be found here:
+            Much of the particle animation work is based on Dr. Yu's article:
             https://tonysyu.github.io/animating-particles-in-a-flow.html
         '''
-        self.__ani_fig = fig 
-        self.__ani_ax = ax
 
-        self.__ani_xlim = self.__ani_ax.get_xlim()
-        self.__ani_ylim = self.__ani_ax.get_ylim()
+        self.__particle_handler = _ParticleSimulationHandler(fig, ax, self.__unp, self.__vnp, pts, frames, dt, blit, fmt, color, alpha, **kwargs)
 
-        self.__ln, = self.__ani_ax.plot([], [], fmt, color=color, alpha=alpha, **kwargs)
-
-        if pts is None:
-            pts = np.array((np.random.uniform(*self.__ani_xlim, 50), np.random.uniform(*self.__ani_ylim, 50))).transpose()
-
-        # blit is importantly set to False if interactivity is enabled. if blit=True,
-        # changes to the vector field won't appear, or will act undesirably when using
-        # the sliders.
-        if self.__interactive_state:
-            self.__ani = FuncAnimation(self.__ani_fig, self.__particle_update, interval=1, frames=frames, blit=False, fargs=(pts, dt))
-        else:
-            self.__ani = FuncAnimation(self.__ani_fig, self.__particle_update, interval=1, frames=frames, blit=True, fargs=(pts, dt))        
-        
-        return self.__ani
+        return self.__particle_handler.ani
 
     def get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str:
         '''
-        Returns a string of the VectorField instance in LaTeX formatting.
+        Returns a string of the VectorField instance in LaTeX format.
 
         Parameters
         ----------
@@ -637,7 +561,7 @@ class VectorField(object):
         
         Returns
         -------
-            str : VectorField instance in LaTeX formatting.
+            str : VectorField instance in LaTeX format.
         
         References
         ----------
@@ -651,96 +575,3 @@ class VectorField(object):
             return '$\\vec{{{}}} = ({})\\hat{{i}} + ({})\\hat{{j}}$'.format(self.name, sym.latex(self.__usym), sym.latex(self.__vsym))
         else:
             raise ValueError('notation, "{}", not recognized -- possible options are: "angled", "parentheses", "unit"'.format(notation))
-
-    def __solve_ode(self, f:Callable, pts:Iterable[tuple], dt:float) -> list:
-        '''
-        Solves for the displacement of each particle with respect to the change in time.
-
-        Parameters
-        ----------
-            f : Function integrand. In our case, the u and v scalar functions. 
-            pts : Array of coordinate pairs. 
-            dt : The change in time from one frame to the next.
-        
-        Returns
-        -------
-            list : A list of all updated particle positions.
-        '''
-        return [odeint(f, pt, [0, dt])[-1] for pt in pts]  # using an ndarray here would be better -- currently figuring that out if possible
-
-    def __vels(self, pt:tuple, _) -> list:
-        '''
-        Calculates the velocity of the particle at a specific point.
-
-        Parameters
-        ----------
-            pt : An x, y coordinate pair.
-            _ : Dummy time parameter required for odeint(). Unused since scalar functions don't depend on time.
-        
-        Returns
-        -------
-            list : The x and y velocity at the given point (index 0 and index 1, respectively).
-        
-        Notes
-        -----
-            If interactivity from the plot() method is enabled, the slider values will be multiplied by the
-            output of the scalar functions. Otherwise, the scale parameter will be used.
-        '''
-        # if self.__interactive_state:
-        #     return [self.__scale_slider.val * self.__unp(*pt), self.__scale_slider.val * self.__vnp(*pt)]
-
-        return [self.__unp(*pt), self.__vnp(*pt)]
-
-    def __remove_pts(self, pts:np.ndarray) -> np.ndarray:
-        '''
-        Removes points that are outside the bounds of the axes. 
-
-        Parameters
-        ----------
-            pts : Array of coordinate pairs.
-        
-        Returns
-        -------
-            np.ndarray : The same array but with out-of-boundary points removed.
-        
-        Credits
-        -------
-            Tony S. Yu, Ph.D.
-        '''
-        if len(pts) == 0:
-            return []
-        out_x = (pts[:, 0] < self.__ani_xlim[0]) | (pts[:, 0] > self.__ani_xlim[1])
-        out_y = (pts[:, 1] < self.__ani_ylim[0]) | (pts[:, 1] > self.__ani_ylim[1])
-        keep = ~(out_x | out_y)
-
-        return pts[keep]
-
-    def __particle_update(self, frame:int, *fargs) -> Line2D:
-        '''
-        Calculates particle displacements, removes out-of-axes points, and subsequently updates the 
-        axes with new particle positions.
-
-        Parameters
-        ----------
-            frame : Current frame of the animation.
-            *fargs : A list of the intial particle positions at index 0 (type: Iterable), and the dt value at index 1 (type: float).
-        
-        Returns
-        -------
-            matplotlib.lines.Line2D : The updated Line2D array.
-        '''
-        # self.__pts needs to be a data member, though it may not look like it at first.
-        # transition arrays would be reset back to the initial if not a data member. 
-
-        if frame == 0:
-            self.__pts = fargs[0]
-
-        self.__pts = np.asarray(self.__solve_ode(self.__vels, self.__pts, fargs[1]))
-        self.__pts = np.asarray(self.__remove_pts(self.__pts))
-
-        self.__pts.shape = (self.__pts.shape[0], 2)  # rudimentary way of ensuring .transpose() runs properly
-        x, y = self.__pts.transpose()
-
-        self.__ln.set_data(x, y)
-
-        return self.__ln,
