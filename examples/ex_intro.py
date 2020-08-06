@@ -28,9 +28,9 @@ ax.add_patch(plt.Circle((0, 0), radius=1, fc='k'))
 
 pts = np.array((np.full(20, -3), np.random.uniform(-3, 3, 20))).transpose()
 
-F = VectorField.from_stream(cylinder(U=15))
+F = VectorField.from_stream(cylinder())
 F.plot(fig, ax, scale=0.25, density=20, colorbar=False, cmap='Blues_r')
-ani = F.particles(fig, ax, pts=pts, frames=250, color='k')
+ani = F.particles(fig, ax, pts=pts, frames=800, color='k')
 
 # ani.save('ex_intro.gif', writer=PillowWriter(fps=30))
 plt.show()
