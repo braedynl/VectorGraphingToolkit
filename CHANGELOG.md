@@ -11,7 +11,7 @@
         - Author's note: this change was made for sake of optimization, and since curl and divergence is typically represented by a heatmap in most practical applications (possible upcoming feature).
     - Added `blit` argument to `particles()`.
         - Type: `bool`. Option to blit the animation. 
-        - Should be set to `False` if `plot()` is active with interactivity enabled.
+        - Should be set to `False` if `plot()` is active with interactivity enabled on the same `Axes`.
         - Author's note: whether the animation was blitted or not was previously dependent on if `plot()` had interactivity enabled. Some backend optimizations had to be made that prevented `particles()` from knowing `plot()` states, and so `blit` is being left for the user to control.
     - The `scale` parameter of `plot()` no longer influences the speed of particles in the `particles()` method animation. 
         - Author's note: this is a consequence of the optimization explained above. Matplotlib isn't cut-out for dealing with this kind of animation work anyways.
