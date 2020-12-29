@@ -1,577 +1,604 @@
-'''
-VectorGraphingToolkit
-=====================
-
-A simplistic vector/vector field visualization tool built on top of matplotlib.
-
-Recommended import:
-
-    from vgtk import Vector, VectorField
-
-Version: 0.1.0-beta
-
-GitHub/Docs: https://github.com/braedynl/VectorGraphingToolkit/
-
-Author: Braedyn Lettinga
-
-Collaborators: Ashu Acharya
-
-Credits: Heiko Hergert, Ph.D., Tony S. Yu, Ph.D.
-
-This project is licensed under the MIT License - see the page below for more details:
-
-https://github.com/braedynl/VectorGraphingToolkit/blob/master/LICENSE
-'''
-
 from __future__ import annotations
 
-from typing import Callable, Iterable, Union
+import math
+from numbers import Real
+from typing import Callable, List, TypeVar
 
-import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import sympy as sym
+from matplotlib.animation import FuncAnimation
 from matplotlib.axes import Axes
-from matplotlib.colors import ListedColormap
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.quiver import Quiver
+from scipy.integrate import odeint
 from sympy.utilities.lambdify import lambdastr, lambdify
 
-from vgtk.handlers import (_ParticleSimulationHandler, _VectorEventHandler,
-                           _VectorFieldEventHandler)
+NOTATION_STYLES = {
+    'angled': '$\\vec{{{}}} = \\langle {}, {} \\rangle$',
+    'parentheses': '$\\vec{{{}}} = ({}, {})$',
+    'brackets': '$\\vec{{{}}} = [{}, {}]$',
+    'bmatrix': '$\\vec{{{}}} = \\begin{{bmatrix}} {} \\\\ {} \\end{{bmatrix}}$',
+    'pmatrix': '$\\vec{{{}}} = \\begin{{pmatrix}} {} \\\\ {} \\end{{pmatrix}}$',
+    'basis': '$\\vec{{{}}} = ({}) \\hat{{i}} + ({}) \\hat{{j}}$'
+}
 
+ArrayLike = TypeVar('ArrayLike')
+Pair = TypeVar('Pair')
+Sympifyable = TypeVar('Sympifyable')
 
-class Vector(object):
-    '''
-    This class simulates a two-dimensional vector in R^2 space.
+class Vector:
+    """
+    Represents a euclidean vector in R2 space.
 
     Parameters
     ----------
-        u : Base u scalar.
-        v : Base v scalar.
-        name : Name of the vector. Used for plot interactivity and string methods.
-    
-    Notes
-    -----
-        `u`, `v`, and `name` are all attributes, and have corresponding setters.
-        There is also a `scalars` getter/setter, which returns a `numpy.ndarray`
-        of the two scalars. It can be set with any iterable of shape (2, ).
+    u
+        Horizontal scalar of the vector.
+    v
+        Vertical scalar of the vector.
 
-        Scalars are kept un-rounded internally. You can use `repr()` to see the 
-        scalars un-rounded. `__str__()` will always round to the second decimal
-        place. 
+    Raises
+    ------
+    TypeError
+        If either scalars are not a real numeric type.
+    """
 
-        Conversion from an array is not inherently supported by the constructor. 
-        Use the `*` operator if you want to unpack two scalar values from an array. 
-    '''
+    __slots__ = ['__scalars']
 
-    def __init__(self, u:float, v:float, name:str='v'):
-        self.__scalar_handle(u, v)
-        self.__scalars = np.array((u, v), dtype=np.dtype(float))
-        self.name = str(name)
-
-        self.__handler = None
-    
-    def __add__(self, other:Vector) -> Vector:
-        '''Adds two vectors.''' 
-        return Vector(*(self.__scalars + other.__scalars), '({}+{})'.format(self.name, other.name))
-
-    def __iadd__(self, other:Vector) -> self:
-        '''Adds two vectors in-place.'''
-        self.__scalars += other.__scalars
-        return self
-    
-    def __sub__(self, other:Vector) -> Vector:
-        '''Subtracts two vectors.'''
-        return Vector(*(self.__scalars - other.__scalars), '({}-{})'.format(self.name, other.name))
-
-    def __isub__(self, other:Vector) -> self:
-        '''Subtracts two vectors in-place.'''
-        self.__scalars -= other.__scalars
-        return self
-
-    def __mul__(self, a:float) -> Vector:
-        '''Multiplies vector by a scalar value.'''
-        return Vector(*(self.__scalars * a), '({}*{})'.format(a, self.name))
-
-    def __rmul__(self, a:float) -> Vector:
-        '''Multiplies vector by a scalar value.'''
-        return self.__mul__(a)
-
-    def __imul__(self, a:float) -> self:
-        '''Multiples vector by a scalar value in-place.'''
-        self.__scalars *= a 
-        return self
-
-    def __truediv__(self, a:float) -> Vector:
-        '''Divides vector by a scalar value.'''
-        return Vector(*(self.__scalars / a), '({}/{})'.format(self.name, a))
-    
-    def __idiv__(self, a:float) -> self:
-        '''Divides vector by a scalar value in-place.'''
-        self.__scalars /= a 
-        return self
-    
-    def __invert__(self):
-        '''Converts Vector into its equivalent unit vector form. Returns self.'''
-        return self.unit()
-    
-    def __xor__(self, other:Vector) -> float:
-        '''
-        Calculates the dot product between two Vector instances.
-
-        Parameters
-        ----------
-            other : Another Vector instance.
-        
-        Returns
-        -------
-            float : Resultant dot product.
-        '''
-        return self.dot(other)
-
-    def __eq__(self, other:Vector) -> bool:
-        '''Tests if two vectors are equivalent.'''
-        return all(self.__scalars == other.__scalars)
-    
-    def __ne__(self, other:Vector) -> bool:
-        '''Tests if two vectors are not equivalent.'''
-        return not self.__eq__(other)
-
-    def __hash__(self) -> int:
-        '''Returns id of self.'''
-        return id(self)
-
-    def __getitem__(self, index:int) -> float:
-        '''Obtains the u/v scalar from the array of scalars.'''
-        return self.__scalars[index]
-    
-    def __setitem__(self, index:int, value:float) -> None:
-        '''Sets the u/v scalar from the array of scalars.'''
-        self.__scalars[index] = value
-
-    def __str__(self) -> str:
-        '''Returns a string of the vector in angle-bracket notation.'''
-        return '{} = <{:.2f}, {:.2f}>'.format(self.name, *self.__scalars)
-
-    def __repr__(self) -> str:
-        '''Returns a string of the vector in angle-bracket notation, un-rounded.'''
-        return '{} = <{}, {}>'.format(self.name, *self.__scalars)
+    def __init__(self, u: Real = 0, v: Real = 0):
+        if not isinstance(u, Real) or not isinstance(v, Real):
+            raise TypeError('u or v argument is not a real numeric type')
+        self.__scalars = np.array([u, v], dtype=np.double)
 
     @property
     def u(self) -> float:
-        '''Gets u scalar.'''
+        """Horizontal scalar of the vector."""
         return self.__scalars[0]
-    
+
     @u.setter
-    def u(self, u:float) -> None:
-        '''Sets u scalar.'''
-        self.__scalars[0] = float(u)
-    
+    def u(self, u: Real) -> None:
+        self.__scalars[0] = u
+
     @property
     def v(self) -> float:
-        '''Gets v scalar.'''
+        """Vertical scalar of the vector."""
         return self.__scalars[1]
 
     @v.setter
-    def v(self, v:float) -> None:
-        '''Sets v scalar.'''
-        self.__scalars[1] = float(v)
-
-    @property
-    def scalars(self) -> np.ndarray:
-        '''Gets array of scalars.'''
-        return self.__scalars
-    
-    @scalars.setter
-    def scalars(self, arr:Iterable[float]) -> None:
-        '''Sets array of scalars.'''
-        if len(arr) != 2: raise ValueError('dimension mismatch')
-        self.__scalar_handle(arr[0], arr[1])    
-        self.__scalars = np.array(arr, dtype=np.dtype(float))
+    def v(self, v: Real) -> None:
+        self.__scalars[1] = v
 
     @property
     def mag(self) -> float:
-        '''Magnitude of the vector.'''
+        """Magnitude of the vector."""
         return np.linalg.norm(self.__scalars)
 
-    def dot(self, other:Vector) -> float:
-        '''
-        Calculates the dot product between two Vector instances.
+    def __pos__(self) -> Vector:
+        return Vector(*(+self.__scalars))
 
-        Parameters
-        ----------
-            other : Another Vector instance.
-        
-        Returns
-        -------
-            float : Resultant dot product.
-        '''
-        return np.dot(self.__scalars, other.__scalars)
+    def __neg__(self) -> Vector:
+        return Vector(*(-self.__scalars))
 
-    def angle(self, other:Vector, degrees:bool=False) -> float:
-        '''
-        Measures the radian angle between two Vector instances.
+    def __inv__(self) -> Vector:
+        m = self.mag
+        if math.isclose(m, 0):
+            raise ZeroDivisionError(
+                'cannot convert zero vector to unit vector')
+        return Vector(*(self.__scalars / m))
 
-        Parameters
-        ----------
-            other : Another Vector instance.
-            degrees : Returns angle measured in degrees if True.
-        
-        Returns
-        -------
-            float : Resultant angle between the two vectors.
-        '''
-        t = np.arccos( self.dot(other) / (self.mag * other.mag) )
-        return t if not degrees else t * (180/np.pi)
+    def __add__(self, other: Vector) -> Vector:
+        return Vector(*(self.__scalars + other.__scalars))
 
-    def unit(self) -> self:
-        '''Converts Vector into its equivalent unit vector form. Returns self.'''
-        self.__scalars = self.__scalars / self.mag
+    def __iadd__(self, other: Vector) -> self:
+        self.__scalars += other.__scalars
         return self
 
-    def plot(self, fig:Figure, ax:Axes, x:float=0, y:float=0, color:str='skyblue', trace_scalars:bool=False, 
-             interactive:bool=False, **kwargs) -> matplotlib.quiver.Quiver:
-        '''
-        Plots the vector on a given matplotlib Axes.
+    def __sub__(self, other: Vector) -> Vector:
+        return Vector(*(self.__scalars - other.__scalars))
+
+    def __isub__(self, other: Vector) -> self:
+        self.__scalars -= other.__scalars
+        return self
+
+    def __mul__(self, a: Real) -> Vector:
+        return Vector(*(self.__scalars * a))
+
+    def __rmul__(self, a: Real) -> Vector:
+        return self.__mul__(a)
+
+    def __imul__(self, a: Real) -> self:
+        self.__scalars *= a
+        return self
+
+    def __truediv__(self, a: Real) -> Vector:
+        return Vector(*(self.__scalars / a))
+
+    def __itruediv__(self, a: Real) -> self:
+        self.__scalars /= a
+        return self
+
+    def __floordiv__(self, a: Real) -> Vector:
+        return Vector(*(self.__scalars // a))
+
+    def __ifloordiv__(self, a: Real) -> self:
+        self.__scalars //= a
+        return self
+
+    def __and__(self, other: Vector) -> float:
+        return self.u * other.v - other.u * self.v
+
+    def __xor__(self, other: Vector) -> float:
+        return np.dot(self.__scalars, other.__scalars)
+
+    def __eq__(self, other: Vector) -> bool:
+        if not isinstance(other, Vector):
+            return False
+        return np.allclose(self.__scalars, other.__scalars)
+
+    def __ne__(self, other: Vector) -> bool:
+        return not self.__eq__(other)
+
+    def __str__(self) -> str:
+        return 'Vector({:.2f}, {:.2f})'.format(*self.__scalars)
+
+    def __repr__(self) -> str:
+        return 'Vector({}, {})'.format(*self.__scalars)
+
+    def __hash__(self) -> int:
+        return hash((self.u, self.v))
+
+    def unit(self) -> Vector:
+        """
+        Conversion to unit vector.
+
+        Raises
+        ------
+        ZeroDivisionError
+            If vector is a zero vector.
+        """
+        return self.__inv__()
+
+    def dot(self, other: Vector) -> float:
+        """
+        Dot product of two vectors.
 
         Parameters
         ----------
-            fig : A matplotlib.figure.Figure instance.
-            ax : A matplotlib.axes.Axes instance.
-            x : Starting x-coordinate of the vector.
-            y : Starting y-coordinate of the vector.
-            color : Color of the vector. Argument passed to ~Axes.quiver().
-            trace_scalars : Option to plot dashed lines that represent the scalar values of the vector.
-                - The u scalar is represented as blue (C0), the v scalar is represented as orange (C1)
-            interactive : Option to make the vector plot interactable.
-                - A point is plotted at the tip of the vector that allows the user to warp, shift and see
-                  various details about the vector.
-                - Holding left-click will drag the vector's tip to the mouse pointer's location, while the
-                  base of the vector stays fixed.
-                - Holding right-click will drag the entire vector to the mouse pointer's location, while the
-                  magnitude and direction stays fixed.
-                - Holding middle-click will show the vector's details without warping or shifting.
-            **kwargs : Additional arguments passed to ~Axes.quiver().
-        
+        other
+            Second operand vector.
+
         Returns
         -------
-            matplotlib.quiver.Quiver : The created Quiver instance.
-        
-        References
+        float
+            Dot product of operand vectors.
+        """
+        return self.__xor__(other)
+
+    def cross(self, other: Vector) -> float:
+        """
+        Cross product of two vectors.
+
+        Parameters
         ----------
-            color options: https://matplotlib.org/3.1.0/gallery/color/named_colors.html
-            kwargs options: https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.quiver.html
-        
+        other
+            Second operand vector.
+
+        Returns
+        -------
+        float
+            Cross product of operand vectors.
+        """
+        return self.__and__(other)
+
+    def angle(self, other: Vector, degrees: bool = False) -> float:
+        """
+        Angle between two vectors in radians.
+
+        Parameters
+        ----------
+        other
+            Second operand vector.
+        degrees
+            Option to return angle in degrees.
+
+        Returns
+        -------
+        float
+            Angle between operand vectors.
+        """
+        theta = math.acos(self.__xor__(other) / (self.mag * other.mag))
+        if not degrees:
+            return theta
+        return theta * (180 / math.pi)
+
+    def is_opposite(self, other: Vector) -> bool:
+        """
+        Tests if two vectors are opposite to each other.
+
+        Two vectors are opposite if they have the same magnitude
+        but opposite direction.
+
+        Parameters
+        ----------
+        other
+            Second operand vector.
+
+        Returns
+        -------
+        bool
+            True if opposite, else False.
+        """
+        return math.isclose(self.u, -other.u) and math.isclose(self.v, -other.v)
+
+    def is_parallel(self, other: Vector) -> bool:
+        """
+        Tests if two vectors are parallel to each other.
+
+        Two vectors are parallel if they have the same direction
+        but not necessarily the same magnitude.
+
+        Parameters
+        ----------
+        other
+            Second operand vector.
+
+        Returns
+        -------
+        bool
+            True if parallel, else False.
+        """
+        return math.isclose(self.angle(other), 0)
+
+    def is_antiparallel(self, other: Vector) -> bool:
+        """
+        Tests if two vectors are antiparallel to each other.
+
+        Two vectors are antiparallel if they have opposite direction
+        but not necessarily the same magnitude.
+
+        Parameters
+        ----------
+        other
+            Second operand vector.
+
+        Returns
+        -------
+        bool
+            True if antiparallel, else False.
+        """
+        return math.isclose(self.angle(other), math.pi)
+
+    def is_perpendicular(self, other: Vector) -> bool:
+        """
+        Tests if two vectors are perpendicular to each other.
+
+        Parameters
+        ----------
+        other
+            Second operand vector.
+
+        Returns
+        -------
+        bool
+            True if perpendicular, else False.
+        """
+        return math.isclose(self.angle(other), math.pi / 2)
+
+    def to_numpy(self) -> np.ndarray:
+        """Returns the vector components as a numpy array."""
+        return self.__scalars
+
+    def to_list(self) -> List[float]:
+        """Returns the vector components as a Python list."""
+        return list(self.__scalars)
+
+    def to_latex(self, name: str = 'v', notation: str = 'basis', ndigits: int = 2) -> str:
+        """
+        Returns the vector represented as a LaTeX string.
+
+        Parameters
+        ----------
+        name
+            Name of the vector.
+        notation
+            Notation format of the string.
+        ndigits
+            nth decimal place to round components to.
+
+        Returns
+        -------
+        str
+            The vector represented as a LaTeX string.
+
         Notes
         -----
-            'scale_units', 'angles' and 'scale' are overwritten in `kwargs` to prevent warping.
-        '''
-        kwargs['color'] = color
-        kwargs['scale_units'] = 'xy'
-        kwargs['angles'] = 'xy'
-        kwargs['scale'] = 1
+        Accepted notation arguments are "angled", "parentheses", "brackets", "bmatrix",
+        "pmatrix", and "basis".
 
-        self.__handler = _VectorEventHandler(fig, ax, x, y, *self.__scalars, self.name, trace_scalars, interactive, **kwargs)
-        
-        return self.__handler.quiver
+        Raises
+        ------
+        ValueError
+            If notation is not recognized.
+        """
+        if notation not in NOTATION_STYLES:
+            raise ValueError('invalid notation argument "{}"'.format(notation))
+        return NOTATION_STYLES[notation].format(
+            name, round(self.u, ndigits), round(self.v, ndigits))
 
-    def get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str:
-        '''
-        Returns a string of the Vector instance in LaTeX format.
+    def plot(self, ax: Axes, x: Real = 0, y: Real = 0, **kwargs) -> Quiver:
+        """
+        Plots the vector on a matplotlib Axes.
 
         Parameters
         ----------
-            notation : Changes the notation style of the string.    
-                - 'angled' : Ordered set notation, angle-bracket variant.
-                - 'parentheses' : Ordered set notation, parentheses variant.
-                - 'unit' : Unit vector notation. 
-        
+        ax
+            Axes to plot vector.
+        x
+            x coordinate of the vector.
+        y
+            y coordinate of the vector.
+        **kwargs
+            Additional keyword arguments passed to ~Axes.quiver()
+
         Returns
         -------
-            str : Vector instance in LaTeX format.
-        
-        References
-        ----------
-            https://en.wikipedia.org/wiki/Vector_notation
-        '''
-        if notation == 'angled':
-            return '$\\vec{{{}}} = <{}, {}>$'.format(self.name, self.__scalars[0], self.__scalars[1])
-        elif notation == 'parentheses':
-            return '$\\vec{{{}}} = ({}, {})$'.format(self.name, self.__scalars[0], self.__scalars[1])
-        elif notation == 'unit':
-            return '$\\vec{{{}}} = ({})\\hat{{i}} + ({})\\hat{{j}}$'.format(self.name, self.__scalars[0], self.__scalars[1])
-        else:
-            raise ValueError('notation, "{}", not recognized -- possible options are: "angled", "parentheses", "unit"'.format(notation))
-
-    def __scalar_handle(self, u:float, v:float) -> None:
-        '''Tests if all vectors are a numeric type.'''
-        if not isinstance(u, (int, float)) or not isinstance(v, (int, float)):
-            raise TypeError('not all scalars are a numeric type')
+        matplotlib.quiver.Quiver
+            The created Quiver instance.
+        """
+        return ax.quiver(x, y, self.u, self.v, **kwargs)
 
 
-class VectorField(object):
-    '''
-    This class simulates a two-dimensional vector field in R^2 space.
+class VectorField:
+    """
+    Represents a static vector field in R2 space.
 
     Parameters
     ----------
-        u : Base u scalar function of two variables (must be x and y).
-        v : Base v scalar function of two variables (must be x and y).
-        name : Name of the vector field. Used for plot interactivity and string methods.
-    
+    u
+        Horizontal scalar function of x and y.
+    v
+        Vertical scalar function of x and y.
+
     Notes
     -----
-        'expr' represents a general sympy expression.
+        The Sympifyable type is any expression accepted by
+        the sympy.sympfiy() function. Read more here:
 
-        `u` and `v` arguments are passed to `sympy.sympify()`. Expressions are ran via the 
-        `exec()` function, which means that formulae must be in proper Python syntax. 
-        Many common mathematical functions can be written without the use of `sympy`, like 
-        `'cos()'`, `'sin()'`, `'tan()'`, etc. To express e^x as a string, use `'exp()'`.
+        https://docs.sympy.org/latest/modules/core.html#id1
+    """
 
-        `u`, `v`, and `name` are all attributes, and have corresponding setters.
-    '''
+    __slots__ = ['__u_sym', '__v_sym', '__u_np', '__v_np']
+    __x, __y = sym.symbols('x y')
 
-    def __init__(self, u:Union[str, float, 'expr'], v:Union[str, float, 'expr'], name:str='F'):
+    def __init__(self, u: Sympifyable, v: Sympifyable):
+        self.__u_sym = sym.sympify(u)
+        self.__v_sym = sym.sympify(v)
+        self.__u_np = lambdify(
+            (self.__x, self.__y), self.__u_sym, 'numpy')
+        self.__v_np = lambdify(
+            (self.__x, self.__y), self.__v_sym, 'numpy')
 
-        self.__usym = sym.sympify(u)
-        self.__vsym = sym.sympify(v)
+    @property
+    def u(self) -> Callable[[Real, Real], Real]:
+        """Horizontal scalar function of x and y."""
+        return self.__u_np
 
+    @u.setter
+    def u(self, u: Sympifyable) -> None:
+        self.__u_sym = sym.sympify(u)
+        self.__u_np = lambdify(
+            (self.__x, self.__y), self.__u_sym, 'numpy')
+
+    @property
+    def v(self) -> Callable[[Real, Real], Real]:
+        """Vertical scalar function of x and y."""
+        return self.__v_np
+
+    @v.setter
+    def v(self, v: Sympifyable) -> None:
+        self.__v_sym = sym.sympify(v)
+        self.__v_np = lambdify(
+            (self.__x, self.__y), self.__v_sym, 'numpy')
+
+    @property
+    def mag(self) -> Callable[[Real, Real], Real]:
+        """Magnitude function of the vector field."""
+        return lambdify(
+            (self.__x, self.__y),
+            sym.sqrt(self.__u_sym**2 +
+                     self.__v_sym**2),
+            'numpy')
+
+    @property
+    def div(self) -> Callable[[Real, Real], Real]:
+        """Divergence function of the vector field."""
+        return lambdify(
+            (self.__x, self.__y),
+            sym.diff(self.__u_sym, self.__x) +
+            sym.diff(self.__v_sym, self.__y),
+            'numpy')
+
+    @property
+    def curl(self) -> Callable[[Real, Real], Real]:
+        """Curl function of the vector field."""
+        return lambdify(
+            (self.__x, self.__y),
+            sym.diff(self.__v_sym, self.__x) -
+            sym.diff(self.__u_sym, self.__y),
+            'numpy')
+
+    @classmethod
+    def from_grad(cls, f: Sympifyable) -> VectorField:
+        """
+        Create a VectorField from a gradient function.
+
+        Parameters
+        ----------
+        f
+            A gradient function of x and y.
+
+        Returns
+        -------
+        VectorField
+            The created vector field instance.
+        """
         x, y = sym.symbols('x y')
-        self.__unp = lambdify((x, y), self.__usym, 'numpy' )
-        self.__vnp = lambdify((x, y), self.__vsym, 'numpy' )
+        return VectorField(sym.diff(f, x), sym.diff(f, y))
 
-        self.name = str(name)
+    @classmethod
+    def from_stream(cls, psi: Sympifyable) -> VectorField:
+        """
+        Create a VectorField from a stream function.
 
-        self.__handler = None
-        self.__particle_handler = None
+        Parameters
+        ----------
+        psi
+            A stream function of x and y.
+
+        Returns
+        -------
+        VectorField
+            The created vector field instance.
+        """
+        x, y = sym.symbols('x y')
+        return VectorField(sym.diff(psi, y), -sym.diff(psi, x))
 
     def __str__(self) -> str:
-        '''Returns a string of the vector field in angle-bracket notation.'''
-        return '{} = <{}, {}>'.format(self.name, self.__usym, self.__vsym)
-    
+        return 'VectorField({}, {})'.format(self.__u_sym, self.__v_sym)
+
     def __repr__(self) -> str:
-        '''Returns a string of the vector field in angle-bracket notation with lambda parameters.'''
-        x, y = sym.symbols('x y')
-        return '{} = <{}, {}>'.format(self.name, lambdastr((x, y), self.__usym), lambdastr((x, y), self.__vsym))
-
-    @property
-    def u(self) -> Callable[[float, float], float]:
-        '''Gets u scalar function.'''
-        return self.__unp
-    
-    @u.setter
-    def u(self, u:Union[str, float, 'expr']) -> None:
-        '''Sets u scalar function.'''
-        self.__usym = sym.sympify(u)
-        x, y = sym.symbols('x y')
-        self.__unp = lambdify((x, y), self.__usym, 'numpy')
-    
-    @property
-    def v(self) -> Callable[[float, float], float]:
-        '''Gets v scalar function.'''
-        return self.__vnp
-    
-    @v.setter
-    def v(self, v:Union[str, float, 'expr']) -> None:
-        '''Sets v scalar function.'''
-        self.__vsym = sym.sympify(v)
-        x, y = sym.symbols('x y')
-        self.__vnp = lambdify((x, y), self.__vsym, 'numpy')
-
-    @classmethod
-    def from_grad(cls, f:Union[str, float, 'expr'], name:str='F') -> VectorField:
-        '''
-        Creates a VectorField from the gradient of a given function.
-
-        Parameters
-        ----------
-            f : A function of two variables (must be x and y).
-            name : Name of the vector field. Used for plot interactivity and string methods.
-        
-        Returns
-        -------
-            VectorField : The instantiated VectorField. 
-        
-        References
-        ----------
-            https://en.wikipedia.org/wiki/Gradient
-        '''
-        x, y = sym.symbols('x y')
-        return VectorField(sym.diff(f, x), sym.diff(f, y), name)
-
-    @classmethod
-    def from_stream(cls, psi:Union[str, float, 'expr'], name:str='F') -> VectorField:
-        '''
-        Creates a VectorField from a given stream function.
-
-        Parameters
-        ----------
-            psi : A stream function of two variables (must be x and y).
-            name : Name of the vector field. Used to plot interactivity and string methods.
-        
-        Returns
-        -------
-            VectorField : the instantiated VectorField.
-        
-        References
-        ----------
-            https://en.wikipedia.org/wiki/Stream_function
-        '''
-        x, y = sym.symbols('x y')
-        return VectorField(sym.diff(psi, y), -sym.diff(psi, x), name)
-
-    @property
-    def mag(self) -> Callable[[float, float], float]:
-        '''The magnitude function of the vector field.'''
-        x, y = sym.symbols('x y')
-        return lambdify((x, y), sym.sqrt((self.__usym)**2 + (self.__vsym)**2), 'numpy')
-
-    @property
-    def div(self) -> Callable[[float, float], float]:
-        '''The divergence function of the vector field.'''
-        x, y = sym.symbols('x y')
-        return lambdify((x, y), sym.diff(self.__usym, x) + sym.diff(self.__vsym, y), 'numpy')
-
-    @property
-    def curl(self) -> Callable[[float, float], float]:
-        '''The curl function of the vector field.'''
-        x, y = sym.symbols('x y')
-        return lambdify((x, y), sym.diff(self.__vsym, x) - sym.diff(self.__usym, y), 'numpy')
+        return 'VectorField({}, {})'.format(
+            lambdastr((self.__x, self.__y), self.__u_sym),
+            lambdastr((self.__x, self.__y), self.__v_sym))
 
     def is_solenoidal(self) -> bool:
-        '''Tests if the vector field is solenoidal. Returns bool.'''
-        x, y = sym.symbols('x y')
-        return True if sym.diff(self.__usym, x) + sym.diff(self.__vsym, y) == 0 else False
+        """Tests if the vector field is solenoidal."""
+        return (sym.diff(self.__u_sym, self.__x) +
+                sym.diff(self.__v_sym, self.__y) == 0)
 
     def is_conservative(self) -> bool:
-        '''Tests if the vector field is conservative. Returns bool.'''
-        x, y = sym.symbols('x y')
-        return True if sym.diff(self.__vsym, x) - sym.diff(self.__usym, y) == 0 else False
+        """Tests if the vector field is conservative."""
+        return (sym.diff(self.__v_sym, self.__x) -
+                sym.diff(self.__u_sym, self.__y) == 0)
 
-    def plot(self, fig:Figure, ax:Axes, scale:float=1, density:int=10, cmap:Union[str, ListedColormap]='Blues', 
-             normalize:bool=True, colorbar:bool=True, interactive:bool=False, **kwargs) -> matplotlib.quiver.Quiver:
-        '''
-        Plots the vector field on a given matplotlib Axes.
+    def to_latex(self, name: str = 'F', notation: str = 'basis') -> str:
+        """
+        Returns the vector field represented as a LaTeX string.
 
         Parameters
         ----------
-            fig : A matplotlib.figure.Figure instance.
-            ax : A matplotlib.axes.Axes instance.
-            scale : Scalar value applied to each vector. See notes below for more details.
-            density : A measure of how many vectors to plot within the field.
-                - An evenly-spaced grid of density*density vectors is plotted.
-                - Value must be within range [4, 100].
-            cmap : A matplotlib colormap applied to the field.
-                - Can pass a built-in or custom colormap.
-            normalize : Option to normalize vectors. See notes below for more details.
-            colorbar : Option to display a colorbar of the color mapping.
-                - The values shown, both on the colorbar ticks and the colorbar's label, will vary depending
-                  on the chosen scale and density.
-            interactive : Option to make the vector field plot interactable.
-                - The plot will detect mouse clicks, and sliders will be added below the axes.
-                - Clicking and holding on a point within the axes will display an annotation describing the
-                  curl, divergence, and magnitude at that point.
-                - The scale and density sliders adjust the field's scale and density in realtime. 
-                - The upper-bound of the scale slider is calculated using the x and y limits of the axes.
-            **kwargs : Additional arguments passed to ~Axes.quiver(). 
-        
+        name
+            Name of the vector field.
+        notation
+            Notation format of the string.
+
         Returns
         -------
-            matplotlib.quiver.Quiver : The created Quiver instance.
-        
-        References
-        ----------
-            built-in cmap options: https://matplotlib.org/3.1.0/tutorials/colors/colormaps.html
-            kwargs options: https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.quiver.html
-        
+        str
+            The vector field represented as a LaTeX string.
+
         Notes
         -----
-            When normalize=True, all vectors will be converted into their unit vector form. The scale argument 
-            is then applied after. An auto-scaling algorithm could be implemented in the future, since extremely 
-            small axes will have huge vectors and extremely large axes will have small vectors without adjusting 
-            the scale from its default. 
+            Accepted notation arguments are "angled", "parentheses", "brackets", 
+            "bmatrix", "pmatrix", and "basis".
 
-            'scale_units', 'angles' and 'scale' are overwritten in `kwargs` to prevent warping.
-        '''
-        if not 4 <= density <= 100: raise ValueError('density argument must be within range [4, 100]')
+        Raises
+        ------
+        ValueError
+            If notation is not recognized.
+        """
+        if notation not in NOTATION_STYLES:
+            raise ValueError('invalid notation argument "{}"'.format(notation))
+        return NOTATION_STYLES[notation].format(
+            name, sym.latex(self.__u_sym), sym.latex(self.__v_sym))
 
-        kwargs['cmap'] = cmap
-        kwargs['scale_units'] = 'xy'
-        kwargs['angles'] = 'xy'
-        kwargs['scale'] = 1
-
-        self.__handler = _VectorFieldEventHandler(fig, ax, self.__unp, self.__vnp, self.mag, self.div, self.curl, 
-                                                  self.name, scale, density, normalize, colorbar, interactive, **kwargs)
-
-        return self.__handler.quiver
-
-    def particles(self, fig:Figure, ax:Axes, pts:Iterable[tuple]=None, frames:int=300, dt:float=0.01, blit:bool=True,
-                  fmt:str='o', color:str='k', alpha:float=0.7, **kwargs) -> matplotlib.animation.FuncAnimation:
-        '''
-        Animates particles on a given matplotlib Axes, where relative velocities are modeled by the field.
+    def plot(self, ax: Axes, xn: int = 25, yn: int = 25, **kwargs) -> Quiver:
+        """
+        Plots the vector field on a matplotlib Axes.
 
         Parameters
         ----------
-            fig : A matplotlib.figure.Figure instance.
-            ax : A matplotlib.axes.Axes instance.
-            pts : An array of coordinate pairs that set the initial particle positions.
-                - If `None`, 50 randomly-placed particles will be plotted.
-            frames : The amount of frames to run the animation for.
-            dt : The change in time between each frame.
-                - I recommend keeping this value small.
-            blit : Option to blit particle animation. 
-                - Should be set to `False` if the `plot()` method is active with
-                  interactivity enabled.
-            fmt : Marker style of the particles. Argument passed to ~Axes.plot().
-            color : Color of the particles. Argument passed to ~Axes.plot().
-            alpha : Transparency of the particles. Argument passed to ~Axes.plot().
-            **kwargs : Additional arguments passed to ~Axes.plot(). 
-        
+        ax
+            Axes to plot vector field.
+        xn
+            Number of vectors to plot along the x axis for every y.
+        yn
+            Number of vectors to plot along the y axis for every x.
+        **kwargs
+            Additional keyword arguments passed to ~Axes.quiver()
+
         Returns
         -------
-            matplotlib.animation.FuncAnimation : The created FuncAnimation instance.
-        
-        References
-        ----------
-            color options: https://matplotlib.org/3.1.0/gallery/color/named_colors.html
-            kwargs options: https://matplotlib.org/3.2.1/api/_as_gen/matplotlib.axes.Axes.plot.html
-        
-        Credits
-        -------
-            Heiko Hergert, Ph.D. - Helped with conceptualization.
-            Tony S. Yu, Ph.D. - The only human being on the planet that has an example.
+        matplotlib.quiver.Quiver
+            The created Quiver instance.
+        """
+        x, y = np.meshgrid(
+            np.linspace(*ax.get_xlim(), xn),
+            np.linspace(*ax.get_ylim(), yn)
+        )
 
-            Much of the particle animation work is based on Dr. Yu's article:
-            https://tonysyu.github.io/animating-particles-in-a-flow.html
-        '''
+        u, v, c = self.u(x, y), self.v(x, y), self.mag(x, y)
 
-        self.__particle_handler = _ParticleSimulationHandler(fig, ax, self.__unp, self.__vnp, pts, frames, dt, blit, fmt, color, alpha, **kwargs)
+        return ax.quiver(x, y, u, v, c, **kwargs)
 
-        return self.__particle_handler.ani
-
-    def get_latex_str(self, notation:Union['angled', 'parentheses', 'unit']='angled') -> str:
-        '''
-        Returns a string of the VectorField instance in LaTeX format.
+    def animate(self, fig: Figure, ax: Axes, init_pts: ArrayLike[Pair[Real]] = None, dt: float = 0.01, interval: int = 1, frames: int = 150, blit: bool = False) -> FuncAnimation:
+        """
+        Animates particles modeled by the vector field on a matplotlib Axes.
 
         Parameters
         ----------
-            notation : Changes the notation style of the string.    
-                - 'angled' : Ordered set notation, angle-bracket variant.
-                - 'parentheses' : Ordered set notation, parentheses variant.
-                - 'unit' : Unit vector notation. 
-        
+        fig
+            Figure object required for re-drawing.
+        ax
+            Axes to model animation.
+        init_pts
+            An array of coordinate pairs that set the initial particle positions.
+            If None, 50 randomly-placed particles will be initialized.
+        dt
+            Time step used when calculating particle displacements.
+        interval
+            Amount of time between each frame of the animation in milliseconds.
+        frames
+            Amount of frames to run the animation before looping.
+        blit
+            Option to blit the animation.
+
         Returns
         -------
-            str : VectorField instance in LaTeX format.
-        
-        References
-        ----------
-            https://en.wikipedia.org/wiki/Vector_notation
-        '''
-        if notation == 'angled':
-            return '$\\vec{{{}}} = <{}, {}>$'.format(self.name, sym.latex(self.__usym), sym.latex(self.__vsym))
-        elif notation == 'parentheses':
-            return '$\\vec{{{}}} = ({}, {})$'.format(self.name, sym.latex(self.__usym), sym.latex(self.__vsym))
-        elif notation == 'unit':
-            return '$\\vec{{{}}} = ({})\\hat{{i}} + ({})\\hat{{j}}$'.format(self.name, sym.latex(self.__usym), sym.latex(self.__vsym))
-        else:
-            raise ValueError('notation, "{}", not recognized -- possible options are: "angled", "parentheses", "unit"'.format(notation))
+        matplotlib.animation.FuncAnimation
+            The created FuncAnimation instance.
+
+        Notes
+        -----
+            A reference to the FuncAnimation instance must be kept, otherwise
+            garbage collection will stop the animation.
+        """
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        ln, = ax.plot([], [], 'o', color='k', alpha=0.7)
+        if init_pts is None:
+            init_pts = np.array(
+                (np.random.uniform(*xlim, 50), np.random.uniform(*ylim, 50))).T
+        pts = np.copy(init_pts)
+
+        def remove(pts: np.ndarray) -> np.ndarray:
+            if len(pts) == 0:
+                return np.empty((0, 2))
+            out_x = (pts[:, 0] < xlim[0]) | (pts[:, 0] > xlim[1])
+            out_y = (pts[:, 1] < ylim[0]) | (pts[:, 1] > ylim[1])
+            return pts[~(out_x | out_y)]
+
+        def displace(pts: np.ndarray) -> np.ndarray:
+            return np.array([odeint(lambda pt, _: [self.u(*pt), self.v(*pt)], pt, [0, dt])[-1] for pt in pts])
+
+        def update(frame: int) -> List[Line2D]:
+            nonlocal pts
+            if frame == 0:
+                pts = np.copy(init_pts)
+            pts = remove(displace(pts))
+            ln.set_data(*pts.T)
+            return ln,
+
+        return FuncAnimation(fig, update, interval=interval, frames=frames, blit=blit)
